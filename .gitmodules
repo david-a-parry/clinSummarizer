@@ -1,0 +1,9 @@
+[submodule "getExonsFromUcsc"]
+	path = getExonsFromUcsc
+	url = https://github.com/gantzgraf/getExonsFromUcsc.git
+[submodule "lib/vcfhacks"]
+	path = lib/vcfhacks
+	url = https://github.com/gantzgraf/vcfhacks
+[submodule "genomeUtils"]
+	path = genomeUtils
+	url = https://github.com/gantzgraf/genomeUtils
