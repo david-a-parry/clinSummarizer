@@ -28,7 +28,7 @@ First we need to create our reference files.
 You will need a BED file of your capture regions. This will be used for 
 calculating depth of coverage from your BAM files. If you don't want to specify 
 the name of this bed file for each of your runs place it in the 'bed_files' 
-subdirectory and call it 'capture_regions_grch37.bed'.
+subdirectory and call it 'capture_regions_GRCh37.bed'.
 
 You will also need a tab delimited file with four columns indicating the names 
 of your target gene names, the associated inheritance pattern, whether they are 
@@ -44,6 +44,15 @@ create BED files for the target genes specified in your
 
      ./updateBedFiles.pl
 
+or 
+
+     ./updateBedFiles.pl hg38 
+
+or 
+
+     ./updateBedFiles.pl hg38 /path/to/another_gene_file.txt
+
+
 Next you need to create the SQLITE gene database for your genes of interest. 
 The dbCreator.pl program will read provided gene names and identify the 
 transcript IDs, uniprot IDs, search NCBI's conserved domain database for domain
@@ -58,7 +67,7 @@ files for Human RefSeq protein's available from
 http://mammoth.bcm.tmc.edu/ETserver.html.
 
     ./dbCreator.pl -d genes/gene_database.db \
-    -l genes/gene_inheritance_and_diseases.txt
+    -l genes/gene_inheritance_and_diseases.txt \
     -c ~/ref/clinvar/vep.clinvar.vcf.gz \
     -m ~/ref/hgmd/vep.HGMD_variants_converted.vcf \
     -e ~/ref/HumanProteinsEA/data/ 
@@ -78,7 +87,7 @@ and run './updateBedFiles.pl' again. You will also need to add information for
 these genes to your gene database file. The quickest way to do this is to run:
 
     ./dbCreator.pl -d genes/gene_database.db \
-    -i newGene1[newGene2 ... newGeneN]  
+    -i newGene1[newGene2 ... newGeneN]  \
     -c ~/ref/clinvar/vep.clinvar.vcf.gz \
     -m ~/ref/hgmd/vep.new_gene_HGMD_variants_converted.vcf \
     -e ~/ref/HumanProteinsEA/data/ 
@@ -138,7 +147,7 @@ and sample_summary coverage files named in the format:
 An example command is given below:
 
     ./sampleSummarizer.pl -t  ../genes/clinsummarizer_database_Aug2016.db \
-    -l genes/gene_inheritance_and_diseases.txt
+    -l genes/gene_inheritance_and_diseases.txt \
     -f 0.01 \
     -s ~/ref/GRCh37/dbSNP147/All_20160601.vcf.gz \
     -x ~/ref/GRCh37/exac/ExAC.r0.3.sites.vep.vcf.gz \
