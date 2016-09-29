@@ -1481,31 +1481,36 @@ sub usage{
     print STDERR "ERROR: $msg\n" if $msg;
     print <<EOT
     
-    usage: $0 -l gene_list.txt -d output.db
+    USAGE: $0 -l gene_list.txt -d output.db
            $0 -i gene_symbol/gene_id/transcript_id --d output.db
 
-    Options:
+    OPTIONS:
 
     -l, --list FILE
-        Input file of gene/transcript/protein IDs one per line. Any whitespace following the first word of each line will be ignored.
+        Input file of gene/transcript/protein IDs one per line. Any whitespace
+        following the first word of each line will be ignored.
 
     -i, --ids STRING[s]
-        One or more gene/transcript/protein identifiers to look up. May be used instead of or as well as --list file.
+        One or more gene/transcript/protein identifiers to look up. May be used
+        instead of or as well as --list file.
 
     -d, --db FILE
         Output file for database. Required.
 
     -s, --species STRING
-        Species to search (only applies to non-Ensembl identifiers). Default = human.
+        Species to search (only applies to non-Ensembl identifiers). Default =
+        human.
 
     -e --et_folder FOLDER
-        Optional evolutionary trace folder containing per-protein evolutionary trace score files.
+        Optional evolutionary trace folder containing per-protein evolutionary
+        trace score files.
 
     -m --hgmd FILE
         Optional VEP annotated HGMD VCF for creation of HGMD variant table.
 
     -c --clinvar FILE
-        Optional VEP annotated ClinVar VCF for creation of ClinVar variant table.
+        Optional VEP annotated ClinVar VCF for creation of ClinVar variant
+        table.
 
     -a --assembly STRING
         Optional, specify assembly for HGMD consequences - default = GRCh37.
@@ -1529,11 +1534,12 @@ sub usage{
         Show this help message and exit.
 
 
-    Information:
+    INFORMATION:
     
-    Note that even when using transcript or protein IDs, the parent gene will be identified and all transcripts processed.
+    Note that even when using transcript or protein IDs, the parent gene will be
+    identified and all transcripts processed.
 
-    Author:
+    AUTHOR:
 
     David A. Parry
     University of Edinburgh
