@@ -9,8 +9,6 @@ use Getopt::Long;
 use Data::Dumper;
 use Term::ProgressBar;
 use POSIX qw/strftime/;
-use Excel::Writer::XLSX;
-use Excel::Writer::XLSX::Utility;
 use List::Util qw(first sum max);
 use Pod::Usage;
 use File::Basename;
