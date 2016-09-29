@@ -104,7 +104,9 @@ analysis and variant calling. The starting point is a set of FASTQ files named
 in the format:
 
     [samplename]_S[0-9]_L[lanenumber]_R[readnumber]_[numbers].fastq(.gz)
- or
+ 
+or 
+
     [samplename]_[tenLetterBarcode]_L[lanenumber]_R[readnumber]_[numbers].fastq(.gz)
 
 This wrapper also needs to know where to access various executable files. The 
