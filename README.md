@@ -131,7 +131,7 @@ to provide both the relevant BED files and a directory containing coverage data
 for each sample. The sampleSummarizer.pl program expects to find the per-base
 and sample_summary coverage files named in the format:
 
-    >>'depth.[samplename][.-_].*bqsr(.sample_summary)*'.
+    'depth.[samplename][.-_].*bqsr(.sample_summary)*'.
 
 An example command is given below:
 
