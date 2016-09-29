@@ -2003,45 +2003,46 @@ Input VCF file. Required.
 
 =item B<-t    --transcript_database>
 
-sqlite database of transcripts and protein info created using dbCreator.pl. Required.
+sqlite database of transcripts and protein info created using dbCreator.pl.
+Required.
 
 =item B<-o    --output_prefix>
 
-Optional output prefix. Output files will be named "prefix[samplename].xlsx". Default is to append sample name and .xlsx extention to input filename.
+Optional output prefix. Output files will be named "prefix[samplename].xlsx".
+Default is to append sample name and .xlsx extention to input filename.
 
 =item B<-c    coverage>
 
 Directories with depth of GATK coverage data for each sample.
 
-When reading the provided coverage directory, this program will get the sample names from the VCF and look for corresponding files that match 
+When reading the provided coverage directory, this program will get the sample
+names from the VCF and look for corresponding files that match 
 
-    'depth.[samplename][-_]S[0-9][anything].bqsr' 
-or 
-    'depth.[samplename][-_][tenLetterBarcode][anything]bqsr' 
+    'depth.[samplename][-_]S[0-9][anything].bqsr' or
+'depth.[samplename][-_][tenLetterBarcode][anything]bqsr' 
 
 and the corresponding files ending with '.sample_summary'. 
 
-e.g. 
-    depth.Sample1_S1_indelrealign.rmdups.bqsr
-    depth.Sample2_ACGCGGACTA_indelrealign.rmdups.bqsr
+e.g.  depth.Sample1_S1_indelrealign.rmdups.bqsr
+depth.Sample2_ACGCGGACTA_indelrealign.rmdups.bqsr
 
 =item B<-q    --fastqc_dir>
 
 Directory with samples fastqc results.
 
-When looking for subdirectories of the provided fastqc directory, this program will look for the summary.txt files within directories named as 
+When looking for subdirectories of the provided fastqc directory, this program
+will look for the summary.txt files within directories named as 
 
-    [samplename]_S[0-9]_L[lanenumber]_R[readnumber]_[numbers].fastqc 
-or 
+    [samplename]_S[0-9]_L[lanenumber]_R[readnumber]_[numbers].fastqc or
     [samplename]_[tenLetterBarcode]_L[lanenumber]_R[readnumber]_[numbers].fastqc
 
-e.g. 
-    Sample1_S1_L001_R1_001_fastqc
-    Sample2_ACGCGGACTA_L001_R1_001_fastqc
+e.g.  Sample1_S1_L001_R1_001_fastqc Sample2_ACGCGGACTA_L001_R1_001_fastqc
 
 =item B<-l    --gene_list>
 
-.tsv file of gene names, expected inheritence and condition. The associated inheritance pattern and conditions will be provided in output if this file is provided.
+.tsv file of gene names, expected inheritence and condition. The associated
+inheritance pattern and conditions will be provided in output if this file is
+provided.
 
 =item B<-r    --reportable_regions>
 
@@ -2061,27 +2062,37 @@ ExAC VCF for annotating and filtering on allele frequency.
 
 =item B<-e    --evs>
 
-Evs VCF for annotating and filtering on allele frequency. This must be a single VCF made by combining the per-chromosome VCFs available for download.
+Evs VCF for annotating and filtering on allele frequency. This must be a single
+VCF made by combining the per-chromosome VCFs available for download.
 
 =item B<-z    --cadd_dir>
 
-Directory containing tabix indexed CADD scores for annotating CADD scores to output.
+Directory containing tabix indexed CADD scores for annotating CADD scores to
+output.
 
 =item B<-f    --allele_frequency>
 
-Optional allele frequency cutoff for dbsnp, evs, exac. Variants with an allele frequency above this value will be removed from the output. Valid values are between 0.00 and 1.00.
+Optional allele frequency cutoff for dbsnp, evs, exac. Variants with an allele
+frequency above this value will be removed from the output. Valid values are
+between 0.00 and 1.00.
 
 =item B<-g    --gq>
 
-Optional minimum genotype quality (GQ) for calls. Sample genotypes will only be included in the output if greater than this value. Default = 0.
+Optional minimum genotype quality (GQ) for calls. Sample genotypes will only be
+included in the output if greater than this value. Default = 0.
 
 =item B<-d    --depth>
 
-Optional minimum depth for sample calls. Genotype calls with a depth lower than this will not be included in output.
+Optional minimum depth for sample calls. Genotype calls with a depth lower than
+this will not be included in output.
 
 =item B<-b    allele_balance>
 
-Optional min and optional max alt allele ratio per sample call. If one value is provided this will act as the minimum allele balance cutoff. If a second value is provided this will be used as a maximum allele balance cutoff (if only looking for heterozygous changes, for example). Valid values between 0.00 and 1.00.
+Optional min and optional max alt allele ratio per sample call. If one value is
+provided this will act as the minimum allele balance cutoff. If a second value
+is provided this will be used as a maximum allele balance cutoff (if only
+looking for heterozygous changes, for example). Valid values between 0.00 and
+1.00.
 
 =item B<--samples>
 
@@ -2105,11 +2116,21 @@ Show manual page.
 
 =head1 DESCRIPTION
 
-This program reads a VCF and produces a summary file for each sample within it, listing variants and annotations and optionally creating summaries for depth and fastqc reports. This requires a transcript database for the genes of interest created using dbCreator.pl and various other database files as detailed in the options section. 
+This program reads a VCF and produces a summary file for each sample within it,
+listing variants and annotations and optionally creating summaries for depth and
+fastqc reports. This requires a transcript database for the genes of interest
+created using dbCreator.pl and various other database files as detailed in the
+options section. 
 
-It is generally recommended not to run this manually but to allow the commands created by make_alignment_commands_mopd.pl to run this program as it will automatically identify the required files. 
+It is generally recommended not to run this manually but to allow the commands
+created by make_alignment_commands_mopd.pl to run this program as it will
+automatically identify the required files. 
 
-Separate sheets will be created for 'functional' variants (i.e. those generally expected to effect the function of a transcript or its encoded protein) and for 'other' variants that do not fit in this class. If the necessary files are provided a summary of the depth of coverage and coverage of individual regions will be provided also.
+Separate sheets will be created for 'functional' variants (i.e. those generally
+expected to effect the function of a transcript or its encoded protein) and for
+'other' variants that do not fit in this class. If the necessary files are
+provided a summary of the depth of coverage and coverage of individual regions
+will be provided also.
 
 =cut
 
@@ -2121,7 +2142,14 @@ David A. Parry
 
 Copyright 2016, David A. Parry
 
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details. You should have received a copy of the GNU General Public License along with this program. If not, see <http://www.gnu.org/licenses/>.
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details. You should have received a copy of the GNU General Public License along
+with this program. If not, see <http://www.gnu.org/licenses/>.
 
 =cut
 
