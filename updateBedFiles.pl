@@ -16,13 +16,14 @@ EOT
 ;
 
 
-my $gene_list = shift;
-$gene_list ||= "genes/gene_inheritance_and_diseases.txt";
 my $build = shift;
 $build ||= "GRCh37";
 if ($build !~ /^(GRCh3[78]|hg(19|38))$/){
     die "Unrecognized build '$build' given\n";
 }
+
+my $gene_list = shift;
+$gene_list ||= "genes/gene_inheritance_and_diseases.txt";
 
 my %genes = getGenes();
 
@@ -68,7 +69,7 @@ sub getCodingExons{
         } 
         $cmd .= " | sed s/chr// " if $build =~ /^GRC/;
         my $output = executeCommand($cmd);
-        my $bed = "bed_files/$r". "_coding_exons.bed";
+        my $bed = "bed_files/$r". "_coding_exons_$build.bed";
         $bed =~ s/non-reportable/not_reportable/;
             #legacy reasons - we called the bed files 'not_reportable'
             #instead of 'non-reportable'
