@@ -1,6 +1,26 @@
 # clinSummarizer
 Wrappers and scripts for targetted sequencing analysis
 
+##Installation
+
+Clone this repository as follows:
+
+    git clone --recursive https://github.com/gantzgraf/clinSummarizer.git
+
+These programs are written in Perl and require several non-core modules. 
+You are likely to get an error when attempting to run these scripts for the
+first time, telling you about missing modules. Please see
+http://www.cpan.org/modules/INSTALL.html for instructions on how to install
+these modules. Below is a list of these non-core modules that you are likely to
+need install:
+
+    Term::ProgressBar
+    Bio::DB::HTS::Tabix
+    Excel::Writer::XLSX 
+    HTTP::Tiny
+    LWP::Simple
+    JSON
+
 ##Getting started
 
 First we need to create our reference files.
