@@ -13,10 +13,12 @@ my $indels             = "$RealBin/ref_bundle/1000G_phase1.indels.b37.vcf";
 my $dbsnp              = "$RealBin/ref_bundle/dbSNP146/All_20151104.vcf.gz";
 my $evs                = "$RealBin/ref_bundle/ESP6500SI-V2-SSA137.GRCh38-liftover.combined.vcf.gz";
 my $exac               = "$RealBin/ref_bundle/ExAC.r0.3.sites.vep.vcf.gz";
+my $cadd               = "$RealBin/ref_bundle/cadd/v1.3/";
 my $email              = "";
 my $gatk               = "$RealBin/exe_bundle/GATK/v3.5/GenomeAnalysisTK.jar";
 my $picard             = "$RealBin/exe_bundle/picard/picard-tools-2.1.1/picard.jar";
 my $vep_dir            = "$RealBin/exe_bundle/variant_effect_predictor";
+my $maxentscan         = "$RealBin/exe_bundle/maxentscan/fordownload/";
 my $depth_intervals    = "$RealBin/bed_files/capture_regions_grch37.bed";
 my $reportable_cov     = "$RealBin/bed_files/reportable_coding_exons.bed";
 my $gene_list          = "$RealBin/genes/gene_inheritance_and_diseases.txt";
@@ -43,6 +45,7 @@ my $help;
 my %config;
 GetOptions(
     \%config,
+    "c|cadd_dir=s"        => \$cadd,
     "d|depth_intervals=s" => \$depth_intervals,
     "e|email=s"           => \$email,
     "evs=s"               => \$evs,
@@ -55,6 +58,7 @@ GetOptions(
     "h|help",
     "i|indels=s"          => \$indels,
     "l|list=s{,}"         => \@interval_list,
+    "maxenstscan=s"       => \$maxentscan,
     "m|mem=i"             => \$mem,
     "mills=s"             => \$mills,
     "n|print_scripts",
@@ -90,8 +94,8 @@ if (not $outdir){
     }
 }
 
-if (not (-d $tmpdir)){
-    mkdir($tmpdir) or die "Could not make tmp directory $tmpdir: $!\n";
+if (not (-d $tmp_dir)){
+    mkdir($tmp_dir) or die "Could not make tmp directory $tmp_dir: $!\n";
 }
 
 if (not (-d $script_dir)){
@@ -466,7 +470,7 @@ $call_gatk -T VariantFiltration -V $dir/var.indels.$vcf_name-$date.raw.vcf.gz -o
 
 $call_gatk -T CombineVariants --genotypemergeoption UNSORTED -V $dir/var.snvs.$vcf_name-$date.filters.vcf.gz -V $dir/var.indels.$vcf_name-$date.filters.vcf.gz -o $dir/var.$vcf_name-$date.filters.vcf.gz
 
-perl $vep_dir/variant_effect_predictor.pl  --dir $vep_dir/vep_cache --vcf --offline --everything --plugin LoF   --plugin MaxEntScan,exe_bundle/maxentscan/fordownload/ --buffer_size 200 --check_alleles --gencode_basic --assembly GRCh37 -i $dir/var.$vcf_name-$date.filters.vcf.gz -o $dir/vep.var.$vcf_name-$date.filters.vcf --force --fork 8
+perl $vep_dir/variant_effect_predictor.pl  --dir $vep_dir/vep_cache --vcf --offline --everything --plugin LoF   --plugin MaxEntScan,$maxentscan --buffer_size 200 --check_alleles --gencode_basic --assembly GRCh37 -i $dir/var.$vcf_name-$date.filters.vcf.gz -o $dir/vep.var.$vcf_name-$date.filters.vcf --force --fork 8
 
 bgzip -f $dir/vep.var.$vcf_name-$date.filters.vcf
 
@@ -498,7 +502,7 @@ EOT
 module load igmm/libs/htslib/1.3
 module load igmm/apps/samtools/1.2
 
-$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $RealBin/genes/$gene_db   -n $not_reportable_cov -r $reportable_cov -s $dbsnp  -e $evs -x $exac -z $RealBin/ref_bundle/cadd/v1.3/ -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list
+$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $RealBin/genes/$gene_db   -n $not_reportable_cov -r $reportable_cov -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list
 
 EOT
 ;
@@ -636,9 +640,11 @@ sub usage{
     
     USAGE: perl $0 /data/fastqs/*fastq.gz [options]
     
-    From given FASTQs this script will create a series of qsub scripts to perform alignment and post-processing. 
+    From given FASTQs this script will create a series of qsub scripts to
+    perform alignment and post-processing. 
 
-    FASTQs must be provided as read-pairs and must be named in the following format: 
+    FASTQs must be provided as read-pairs and must be named in the following
+    format: 
             
         [samplename]_S[0-9]_L[lanenumber]_R[readnumber]_[numbers].fastq(.gz)
     or
@@ -653,52 +659,126 @@ sub usage{
 
     OPTIONS: 
 
-    -o    --outdir             [optional location for output files 
-                                - default will be a new subdirectory called alignments_and_vcfs_$date];
-    -s    --script_dir         [directory to write sub scripts to - default = sub_scripts]
-    -q    --qsub               [submit created scripts once finished - this automatically enables queueing of the post-alignment commands for convenience]
-    -f    --freq               [allele frequency cutoff for reporting variants in final summary document]
-    -d    --depth_intervals    [bed file for DepthOfCoverage 
-                                - default = $RealBin/bed_files/capture_regions_grch37.bed]
-    -n    --print_scripts      [print names of created scripts once finished]
-    -g    --gatk               [location of GATK jar file 
-                                - default = $RealBin/exe_bundle/GATK/v3.5/GenomeAnalysisTK.jar]
-    -p    --picard             [location of picard jar file 
-                                - default = $RealBin/exe_bundle/picard/picard-tools-2.1.1/picard.jar]
-    -l    --list               [interval list(s) to use with GATK commands 
-                                - default = $RealBin/bed_files/reportable_genes_grch37.bed and 
-                                 $RealBin/bed_files/not_reportable_genes_grch37.bed]
-    -e    --email              [address to email script messages to]
-    -m    --mem                [amount of memory (in GB) for each GATK/Picard command - default = 4]
-    -v    --vmem               [amount of vmem for each script - default = 8]
-    -t    --threads            [no. threads for each command - default = 8]
-    -r    --runtime            [runtime in hours for each script - default = 4] 
-    -x    --tmp_dir            [directory to use for temporary storage for commands 
-                                - default =  $ENV{HOME}/scratch/tmp/]
-    -i    --indels             [1000 genomes phase1 indels 
-                                - default = $RealBin/ref_bundle/1000G_phase1.indels.b37.vcf]
-          --dbsnp              [dbSNP file 
-                                - default = $RealBin/ref_bundle/dbSNP146/All_20151104.vcf.gz]
-          --evs                [EVS VCF file (all chromosomes in one file) 
-                                - default = $RealBin/ref_bundle/ESP6500SI-V2-SSA137.GRCh38-liftover.combined.vcf.gz]
-          --exac               [ExAC VCF file 
-                                - default = $RealBin/ref_bundle/ExAC.r0.3.sites.vep.vcf.gz]
-          --fasta              [genome reference fasta sequence 
-                                - default = $RealBin/bed_files/capture_regions_grch37.bed
-          --gene_list          [TSV file of gene symbol, expected inheritance pattern and associated conditions for annotating sampleSummarizer output 
-                                - default = $RealBin/genes/gene_inheritance_and_diseases.txt]
-          --gene_database      [SQLITE database created using dbCreator.pl for all genes. This is used for annotating sampleSummarizer output 
-                                - default = $RealBin/genes/gene_database.db]
-          --mills              [Mills and 1000 genomes indels for indelrealignmend 
-                                - default = $RealBin/ref_bundle/Mills_and_1000G_gold_standard.indels.b37.vcf]
-          --reportable_cov     [Bed file of regions in reportable genes to analyze coverage in (e.g. coding exons) 
-                                - default = "$RealBin/bed_files/reportable_coding_exons.bed]
-          --not_reportable_cov [Bed file of regions in non-reportable genes to analyze coverage in 
-                                - default = "$RealBin/bed_files/not_reportable_coding_exons.bed]
-          --vep_dir            [directory containing variant_effect_predictor.pl script and offline database named 'vep_cache' 
-                                - default   = "$RealBin/exe_bundle/variant_effect_predictor";
-          --vcf_name           [name for VCF outputs. Outputs will be named var.[vcf_name].raw.vcf etc. Default = 'panel']
-    -h    --help               [show this help message and exit]
+    -o,--outdir DIR
+        Optional location for output files. Default will be a new subdirectory 
+        called alignments_and_vcfs_$date
+
+    -s,--script_dir DIR
+        Directory to write sub scripts to. Default = './sub_scripts'.
+    
+    -q,--qsub   
+        Submit created scripts once finished - this automatically enables 
+        queueing of the post-alignment commands for convenience.
+
+    -f,--freq FLOAT
+        Allele frequency cutoff for reporting variants in final summary document
+
+    -d,--depth_intervals FILE
+        Bed file for DepthOfCoverage. Default =
+        $RealBin/bed_files/capture_regions_grch37.bed
+
+    -n,--print_scripts
+        Print names of created scripts once finished (if not using --qsub)
+
+    -g,--gatk FILE
+        Location of GATK jar file. Default =
+        $RealBin/exe_bundle/GATK/v3.5/GenomeAnalysisTK.jar
+
+    -p,--picard FILE
+        location of picard jar file. Default =
+        $RealBin/exe_bundle/picard/picard-tools-2.1.1/picard.jar
+
+    -l,--list FILE(s)
+        Interval list(s) to use with GATK commands. Default =
+        $RealBin/bed_files/reportable_genes_grch37.bed and
+        $RealBin/bed_files/not_reportable_genes_grch37.bed
+    
+    -e,--email STRING
+        address to email script messages to
+
+    -m,--mem INT
+        amount of memory (in GB) for each GATK/Picard command. Default = 4
+
+    -v,--vmem INT
+        amount of vmem for each script. Default = 8
+
+    -t,--threads INT
+        no. threads for each command. Default = 8
+
+    -r,--runtime INT
+        runtime in hours for each script. Default = 4
+ 
+    -x,--tmp_dir DIR
+        directory to use for temporary storage for commands. Default =
+        $ENV{HOME}/scratch/tmp/
+    
+    -i,--indels FILE
+        1000 genomes phase1 indels. Default =
+        $RealBin/ref_bundle/1000G_phase1.indels.b37.vcf
+
+    -c,--cadd_dir DIR
+        Directory containing pre-CADD-scored variants for scoring of output.
+        Default = $RealBin/ref_bundle/cadd/v1.3/
+
+    --dbsnp FILE
+         dbSNP file. Default = $RealBin/ref_bundle/dbSNP146/All_20151104.vcf.gz
+
+    --evs FILE
+        EVS VCF file (all chromosomes in one file). Default =
+        $RealBin/ref_bundle/ESP6500SI-V2-SSA137.GRCh38-liftover.combined.vcf.gz
+
+    --exac  FILE         
+        ExAC VCF file. Default =
+        $RealBin/ref_bundle/ExAC.r0.3.sites.vep.vcf.gz]
+
+    --fasta FILE     
+        Genome reference fasta sequence. Default =
+        $RealBin/bed_files/capture_regions_grch37.bed
+    
+    --gene_list FILE
+        TSV file of gene symbol, expected inheritance pattern and associated
+        conditions for annotating sampleSummarizer output. Default =
+        $RealBin/genes/gene_inheritance_and_diseases.txt]
+
+    --gene_database FILE     
+        SQLITE database created using dbCreator.pl for all genes. This is used
+        for annotating sampleSummarizer output. Default =
+        $RealBin/genes/gene_database.db
+
+    --mills FILE
+        Mills and 1000 genomes indels for indelrealignment. Default =
+        $RealBin/ref_bundle/Mills_and_1000G_gold_standard.indels.b37.vcf
+
+    --reportable_cov FILE
+        Bed file of regions in reportable genes to analyze coverage in (e.g.
+        coding exons). Default =
+        "$RealBin/bed_files/reportable_coding_exons.bed
+
+    --not_reportable_cov FILE
+        Bed file of regions in non-reportable genes to analyze coverage in -
+        default = "$RealBin/bed_files/not_reportable_coding_exons.bed
+
+    --vep_dir DIR       
+        directory containing variant_effect_predictor.pl script and offline
+        database named 'vep_cache'. Default =
+        "$RealBin/exe_bundle/variant_effect_predictor
+
+    --maxentscan DIR
+        Directory containing maxentscan scoring programs. Default =
+        "$RealBin/exe_bundle/maxentscan/fordownload/
+
+    --vcf_name STRING
+        Name for VCF outputs. Outputs will be named var.[vcf_name].raw.vcf etc.
+        Default = 'panel'
+
+    -h,--help
+        Show this help message and exit
+
+
+    AUTHOR:
+
+    David A. Parry
+    University of Edinburgh
 
 EOT
 ;
