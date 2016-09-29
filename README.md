@@ -14,6 +14,8 @@ http://www.cpan.org/modules/INSTALL.html for instructions on how to install
 these modules. Below is a list of these non-core modules that you are likely to
 need install:
 
+    DBI
+    DBD::SQLite
     Term::ProgressBar
     Bio::DB::HTS::Tabix
     Excel::Writer::XLSX 
