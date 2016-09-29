@@ -2,12 +2,27 @@
 use strict;
 use warnings;
 
+print STDERR <<EOT
+
+Usage: $0 [genome version] [gene_inheritance_and_diseases.txt]
+
+Example: $0 
+         $0 hg19 
+         $0 hg19 gene_file.txt
+
+Valid genome versions: hg19 hg38 GRCh37 GRCh38
+
+EOT
+;
+
+
+my $gene_list = shift;
+$gene_list ||= "genes/gene_inheritance_and_diseases.txt";
 my $build = shift;
-$build = "GRCh37" if (not $build);
+$build ||= "GRCh37";
 if ($build !~ /^(GRCh3[78]|hg(19|38))$/){
     die "Unrecognized build '$build' given\n";
 }
-my $gene_list = "genes/gene_inheritance_and_diseases.txt";
 
 my %genes = getGenes();
 
