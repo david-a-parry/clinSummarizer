@@ -8,11 +8,11 @@ COL1A2	AR/AD	reportable	Ehlers-Danlos syndrome, cardiac valvular form/Ehlers-Dan
 COL3A1	AD	reportable	Ehlers-Danlos syndrome, type IV
 COL5A1	AD	reportable	Ehlers-Danlos syndrome, classic type
 COL5A2	AD	reportable	Ehlers-Danlos syndrome, classic type
-DSE	AR	reportable	?Ehlers-Danlos syndrome, musculocontractural type 2
 FKBP14	AR	reportable	Ehlers-Danlos syndrome with progressive kyphoscoliosis, myopathy, and hearing loss
 FLNA	XLR	reportable	Cardiac valvular dysplasia, X-linked
 PLOD1	AR	reportable	Ehlers-Danlos syndrome, type VI
 PRDM5	AR	reportable	Brittle cornea syndrome 2
 SLC39A13	AR	reportable	Spondylocheirodysplasia, Ehlers-Danlos syndrome-like
 TNXB	AR	reportable	Ehlers-Danlos syndrome due to tenascin X deficiency
-ZNF469	AR	reportable	Brittle cornea syndrome 1
+ZNF469	AR	Non-reportable	Brittle cornea syndrome 1
+DSE	AR	Non-reportable	?Ehlers-Danlos syndrome, musculocontractural type 2
