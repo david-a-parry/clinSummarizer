@@ -19,17 +19,17 @@ my $gatk               = "$RealBin/exe_bundle/GATK/v3.5/GenomeAnalysisTK.jar";
 my $picard             = "$RealBin/exe_bundle/picard/picard-tools-2.1.1/picard.jar";
 my $vep_dir            = "$RealBin/exe_bundle/variant_effect_predictor";
 my $maxentscan         = "$RealBin/exe_bundle/maxentscan/fordownload/";
-my $depth_intervals    = "$RealBin/bed_files/capture_regions_grch37.bed";
-my $reportable_cov     = "$RealBin/bed_files/reportable_coding_exons.bed";
+my $depth_intervals    = "$RealBin/bed_files/capture_regions_GRCh37.bed";
+my $reportable_cov     = "$RealBin/bed_files/reportable_coding_exons_GRCh37.bed";
 my $gene_list          = "$RealBin/genes/gene_inheritance_and_diseases.txt";
 my $gene_db            = "$RealBin/genes/gene_database.db";
-my $not_reportable_cov = "$RealBin/bed_files/not_reportable_coding_exons.bed";
+my $not_reportable_cov = "$RealBin/bed_files/not_reportable_coding_exons_GRCh37.bed";
 my $tmp_dir            = "$ENV{HOME}/scratch/tmp/";
 my $freq               = 0.01;
 my @interval_list      = 
 (
-    "$RealBin/bed_files/reportable_genes_grch37.bed",
-    "$RealBin/bed_files/not_reportable_genes_grch37.bed",
+    "$RealBin/bed_files/reportable_genes_GRCh37.bed",
+    "$RealBin/bed_files/not_reportable_genes_GRCh37.bed",
 );
 my $script_dir = "sub_scripts";
 
@@ -675,7 +675,7 @@ sub usage{
 
     -d,--depth_intervals FILE
         Bed file for DepthOfCoverage. Default =
-        $RealBin/bed_files/capture_regions_grch37.bed
+        $RealBin/bed_files/capture_regions_GRCh37.bed
 
     -n,--print_scripts
         Print names of created scripts once finished (if not using --qsub)
@@ -690,8 +690,8 @@ sub usage{
 
     -l,--list FILE(s)
         Interval list(s) to use with GATK commands. Default =
-        $RealBin/bed_files/reportable_genes_grch37.bed and
-        $RealBin/bed_files/not_reportable_genes_grch37.bed
+        $RealBin/bed_files/reportable_genes_GRCh37.bed and
+        $RealBin/bed_files/not_reportable_genes_GRCh37.bed
     
     -e,--email STRING
         address to email script messages to
@@ -733,7 +733,7 @@ sub usage{
 
     --fasta FILE     
         Genome reference fasta sequence. Default =
-        $RealBin/bed_files/capture_regions_grch37.bed
+        $RealBin/bed_files/capture_regions_GRCh37.bed
     
     --gene_list FILE
         TSV file of gene symbol, expected inheritance pattern and associated
@@ -752,11 +752,11 @@ sub usage{
     --reportable_cov FILE
         Bed file of regions in reportable genes to analyze coverage in (e.g.
         coding exons). Default =
-        "$RealBin/bed_files/reportable_coding_exons.bed
+        "$RealBin/bed_files/reportable_coding_exons_GRCh37.bed
 
     --not_reportable_cov FILE
         Bed file of regions in non-reportable genes to analyze coverage in -
-        default = "$RealBin/bed_files/not_reportable_coding_exons.bed
+        default = "$RealBin/bed_files/not_reportable_coding_exons_GRCh37.bed
 
     --vep_dir DIR       
         directory containing variant_effect_predictor.pl script and offline
