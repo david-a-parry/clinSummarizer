@@ -679,7 +679,7 @@ sub retrieveCddFeatures{
     my $queries = shift; 
     my $tdata = shift;
     $tdata ||= 'feats';
-    my $url = "http://www.ncbi.nlm.nih.gov/Structure/bwrpsb/bwrpsb.cgi";
+    my $url = "https://www.ncbi.nlm.nih.gov/Structure/bwrpsb/bwrpsb.cgi";
     informUser( "Setting up CDD '$tdata' search...\n");
     my %opts = (
       evalue   => 0.001,
