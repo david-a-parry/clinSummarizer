@@ -40,11 +40,13 @@ my %opts =
     f => 0,
     c => \@coverage_dirs,
     samples => \@samples_to_analyze,
+    cadd_cutoff => 0,
 );
 GetOptions(
     \%opts,
     'b|allele_balance=f{,}',      #min and optional max alt allele ratio per sample call
     'c|coverage=s{,}',            #directories with depth of GATK coverage data for each sample
+    'cadd_cutoff=f',
     'd|depth=i',                  #optional min depth for sample call
     'e|evs=s',                    #evs VCF (concatanated)
     'f|allele_frequency=f',       #allele frequency cutoff for dbsnp, evs, exac
@@ -844,7 +846,7 @@ sub assessVariant{
         foreach my $s (keys %sample_genos){
             push @{$sample_vars{$s}->{$sheet}}, [@{$sample_genos{$s}}, @row];
             if ($opts{u} and $sheet eq "Functional"){#collect sample variants for inheritance analysis
-                if ($cadd_score eq '.' or $cadd_score >= 10){
+                if ($cadd_score eq '.' or $cadd_score >= $opts{cadd_cutoff}){
                     my $h = 1;
                     my $alt = $min{$al}->{ORIGINAL_ALT};
                     $h = 2 if $sample_genos{$s}->[1]  =~  /^$alt[\/\|]$alt$/;
@@ -2095,6 +2097,17 @@ looking for heterozygous changes, for example). Valid values between 0.00 and
 =item B<--samples>
 
 Only analyze the samples listed here. 
+
+=item B<-u    --summary>
+
+Summary XLSX file for outputting variants that are consistent with the 
+proposed model of inheritance specified by the -l/--gene_list file for each 
+sample.
+
+=item B<--cadd_cutoff>
+
+Only consider variants with a cadd score equal to or greater than this value
+for outputting into the -u/--summary XLSX file.
 
 =item B<-p    --progress>
 
