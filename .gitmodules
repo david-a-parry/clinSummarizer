@@ -4,3 +4,6 @@
 [submodule "genomeUtils"]
 	path = genomeUtils
 	url = https://github.com/gantzgraf/genomeUtils
+[submodule "dapPerlGenomicLib"]
+	path = dapPerlGenomicLib
+	url = https://github.com/gantzgraf/dapPerlGenomicLib
