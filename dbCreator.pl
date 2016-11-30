@@ -662,7 +662,7 @@ sub retrieveAndOutputCddInfo{
             "Adding data retrieved from CDD 'feats' search to 'cdd' table of ".
             "$opts{d}.\n"
         );
-        parseCddFeats($feats, \@fields) unless $opts{n} == 1;
+        parseCddFeats($feats, \@fields) unless defined $opts{n} and $opts{n} == 1;
     }
     informUser
     (
