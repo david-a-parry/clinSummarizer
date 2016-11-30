@@ -7,7 +7,7 @@ use Data::Dumper;
 use POSIX qw/strftime/;
 use Bio::DB::Sam;
 use FindBin qw($RealBin);
-use lib "$RealBin/lib/vcfhacks/lib";
+use lib "$RealBin/dapPerlGenomicLib";
 use VcfReader;
 
 my $fasta              = "$RealBin/ref_bundle/hs37d5.fa";
@@ -95,8 +95,8 @@ if (not (-d $outdir)){
     mkdir($outdir) or die "Could not make output directory $outdir: $!\n";
 }
 
-if (not (-d $tmpdir)){
-    mkdir($tmpdir) or die "Could not make tmp directory $tmpdir: $!\n";
+if (not (-d $tmp_dir)){
+    mkdir($tmp_dir) or die "Could not make tmp directory $tmp_dir: $!\n";
 }
 
 my $call_gatk = "java -Djava.io.tmpdir=$tmp_dir -Xmx$mem -jar $gatk -R $fasta";

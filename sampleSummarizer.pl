@@ -19,7 +19,7 @@ use JSON;
 use Excel::Writer::XLSX;
 use Excel::Writer::XLSX::Utility;
 use Bio::DB::HTS::Tabix; 
-use lib "$FindBin::Bin/lib/vcfhacks/lib";
+use lib "$FindBin::Bin/dapPerlGenomicLib";
 use VcfReader;
 use SortGenomicCoordinates;
 

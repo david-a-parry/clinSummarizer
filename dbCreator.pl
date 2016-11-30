@@ -13,7 +13,7 @@ use HTTP::Tiny;
 use URI::Encode qw (uri_decode);
 use File::Tee qw(tee);
 use FindBin;
-use lib "$FindBin::Bin/lib/vcfhacks/lib";
+use lib "$FindBin::Bin/dapPerlGenomicLib";
 use IdParser;
 use EnsemblRestQuery;
 use VcfReader;
