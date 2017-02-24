@@ -44,6 +44,7 @@ my %opts =
 );
 GetOptions(
     \%opts,
+    'a|AF=f',                     #AF cutoff within VCF
     'b|allele_balance=f{,}',      #min and optional max alt allele ratio per sample call
     'c|coverage=s{,}',            #directories with depth of GATK coverage data for each sample
     'cadd_cutoff=f',
@@ -764,6 +765,11 @@ sub assessVariant{
     my @vep_csq = getVepCsq(\@split);
     my $ref  = VcfReader::getVariantField(\@split, 'REF');
     my @alts = split(",", VcfReader::getVariantField(\@split, 'ALT'));
+    my $qual = VcfReader::getVariantField(\@split, 'QUAL');
+    my $filter = VcfReader::getVariantField(\@split, 'FILTER');
+    my $an = VcfReader::getVariantInfoField(\@split, "AN");
+    my @af = split(",",  VcfReader::getVariantInfoField(\@split, "AF") );
+    my @ac = split(",",  VcfReader::getVariantInfoField(\@split, "AC") );
     my @vep_alts = VcfReader::altsToVepAllele
     (
         ref  => $ref,
@@ -777,7 +783,9 @@ sub assessVariant{
         my @row = ();#array of values for output to spreadsheet row
         #skip missing alleles
         next if ($min{$al}->{ORIGINAL_ALT} eq '*');
-        
+        if ($opts{a}){#filter on AF field in VCF
+            next if $af[$al-1] >= $opts{a};
+        }
         #get hash of sample names to array of sample genotype fields
         my %sample_genos = getSamplesWithAllele(\@split, $min{$al});
         next if not keys %sample_genos;#no sample with valid genotype
@@ -835,9 +843,11 @@ sub assessVariant{
             push @row, $min{$al}->{$f};
         }
         #push @row, VcfReader::getVariantField(\@split, 'ID');
-        push @row, VcfReader::getVariantField(\@split, 'QUAL');
-        push @row, VcfReader::getVariantField(\@split, 'FILTER');
-
+        push @row, $qual;
+        push @row, $filter;
+        push @row, $an;
+        push @row, $af[$al-1];
+        push @row, $ac[$al-1];
         #record these details against each sample with variant
         my $sheet = "Other";
         if (exists $functional_classes{$most_damaging_csq}){
@@ -1440,9 +1450,9 @@ sub checkSnpMatches {
     my ( $min_allele, $snp_line ) = @_;
     my %snp_min = VcfReader::minimizeAlleles($snp_line);
     foreach my $snp_allele ( keys %snp_min ) {
-        $min_allele->{CHROM} =~ s/^chr//;
-        $snp_min{$snp_allele}->{CHROM} =~ s/^chr//;
-        next if $min_allele->{CHROM} ne $snp_min{$snp_allele}->{CHROM};
+        (my $m_chr = $min_allele->{CHROM}) =~ s/^chr//;
+        (my $s_chr = $snp_min{$snp_allele}->{CHROM}) =~ s/^chr//;
+        next if $m_chr ne $s_chr;
         next if $min_allele->{POS} ne $snp_min{$snp_allele}->{POS};
         next if $min_allele->{REF} ne $snp_min{$snp_allele}->{REF};
         next if $min_allele->{ALT} ne $snp_min{$snp_allele}->{ALT};
@@ -1964,6 +1974,9 @@ sub getHeaders{
             Alt
             Qual
             Filter
+            AF
+            AC
+            AN
         /
     );
 
@@ -2075,6 +2088,11 @@ output.
 Optional allele frequency cutoff for dbsnp, evs, exac. Variants with an allele
 frequency above this value will be removed from the output. Valid values are
 between 0.00 and 1.00.
+
+=item B<-a    --AF>
+
+Optional allele frequency cutoff for within VCF. Alleles with AF INFO fields 
+higher than this value will be filtered.
 
 =item B<-g    --gq>
 
