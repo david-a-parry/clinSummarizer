@@ -833,6 +833,8 @@ sub assessVariant{
         }
         if (exists $search_handles{et} ){
             push @row, getEtScore($csq_to_report); 
+        }else{
+            push @row, '';
         }
         
         #get CADD scores
@@ -1180,9 +1182,12 @@ sub addHgmdMatches{
 
     #get variants with same AA altered
     my @aa_matches = ();
-    if ($most_damaging_csq eq 'missense_variant' or 
-        $most_damaging_csq eq 'protein_altering_variant' or 
-        $most_damaging_csq =~  /^inframe_(inser|dele)tion$/ 
+    if (exists $search_handles{hgmd_aa} and 
+        exists $search_handles{hgmd_id} and 
+        ( $most_damaging_csq eq 'missense_variant' or 
+          $most_damaging_csq eq 'protein_altering_variant' or 
+          $most_damaging_csq =~  /^inframe_(inser|dele)tion$/ 
+        )
     ){
         $search_handles{hgmd_aa}->execute
         (
@@ -1245,9 +1250,12 @@ sub addClinvarMatches{
 
     #get variants with same AA altered
     my @aa_matches = ();
-    if ($most_damaging_csq eq 'missense_variant' or 
-            $most_damaging_csq eq 'protein_altering_variant' or 
-            $most_damaging_csq =~  /^inframe_(inser|dele)tion$/ 
+    if ( exists $search_handles{clinvar_aa} and 
+         exists $search_handles{clinvar_id} and  
+         ($most_damaging_csq eq 'missense_variant' or 
+          $most_damaging_csq eq 'protein_altering_variant' or 
+          $most_damaging_csq =~  /^inframe_(inser|dele)tion$/ 
+         )
         ){
         $search_handles{clinvar_aa}->execute
         (
@@ -1745,9 +1753,16 @@ sub readTranscriptDatabase{
     $dbh = DBI->connect("DBI:$driver:$opts{t}", {RaiseError => 1})
       or die "Could not connect to sqlite database '$opts{t}': " . DBI->errstr . "\n";
     my %tables = map {$_ => undef} $dbh->tables;
-    foreach my $t ( qw / transcripts uniprot cdd HGMD_VEP ClinVar_VEP/ ){
+    foreach my $t ( qw / transcripts uniprot cdd / ){#essential tables
         if (not exists $tables{"\"main\".\"$t\""}){
             die "ERROR: Could not find table '$t' in $opts{t} - did you use dbCreator.pl to create this database?\n";
+        }
+    }
+    my %missing_tables = ();
+    foreach my $t ( qw / HGMD HGMD_VEP ClinVar ClinVar_VEP / ){#non-essential tables
+        if (not exists $tables{"\"main\".\"$t\""}){
+            print STDERR "WARNING: $t table not found in $opts{t} - will skip variant annotations for this table.\n";
+            $missing_tables{$t}++;
         }
     }
     my $q = "SELECT EnsemblGeneID, EnsemblTranscriptID, EnsemblProteinID, RefSeq_mRNA, RefSeq_peptide, CCDS,  Uniprot, TranscriptRank FROM transcripts";
@@ -1783,8 +1798,9 @@ sub readTranscriptDatabase{
                 and Start <= ? 
             } 
         ),
-        
-        hgmd_pos => $dbh->prepare
+     );
+     if (not exists $missing_tables{HGMD}){
+        $search_handles{hgmd_pos} = $dbh->prepare
         (
             qq{ select hgmd_id, disease, variant_class, gene_symbol, hgvs 
                 FROM HGMD
@@ -1793,33 +1809,37 @@ sub readTranscriptDatabase{
                 and ref == ?
                 and alt == ?
             }
-        ),
+        );
+        $search_handles{hgmd_id} =  $dbh->prepare
+        (
+            qq{ select variant_class, disease FROM HGMD
+                WHERE hgmd_id == ? 
+            }
+        );
+     }
+    
+     if (not exists $missing_tables{HGMD_VEP}){
 
-        hgmd_aa =>  $dbh->prepare
+        $search_handles{hgmd_aa} =  $dbh->prepare
         (
             qq{ select hgmd_id, feature, consequence, protein_position, amino_acids, hgvsc, hgvsp
                  FROM HGMD_VEP
                 WHERE feature == ? 
                 and protein_position == ? 
             }
-        ),
+        );
         
-        hgmd_id =>  $dbh->prepare
-        (
-            qq{ select variant_class, disease FROM HGMD
-                WHERE hgmd_id == ? 
-            }
-        ),
-
-        hgmd_hgvs =>  $dbh->prepare
+        $search_handles{hgmd_hgvs} =  $dbh->prepare
         (
             qq{ select hgvsc, hgvsp
                  FROM HGMD_VEP
                 WHERE hgmd_id == ? 
             }
-        ),
+        );
+      }
 
-        clinvar_pos =>  $dbh->prepare
+     if (not exists $missing_tables{ClinVar}){
+        $search_handles{clinvar_pos} =  $dbh->prepare
         (
             qq{ select measureset_id, pathogenic, 
                 clinical_significance, all_traits, conflicted 
@@ -1829,36 +1849,36 @@ sub readTranscriptDatabase{
                 and ref == ?
                 and alt == ?
             }
-        ),
+        );
 
-        clinvar_aa =>  $dbh->prepare
+        $search_handles{clinvar_id} =  $dbh->prepare
+        (
+            qq{ select pathogenic, clinical_significance, conflicted, all_traits 
+                FROM ClinVar
+                WHERE measureset_id == ? 
+            }
+        );
+      }
+
+     if (not exists $missing_tables{ClinVar_VEP}){
+        $search_handles{clinvar_aa} =  $dbh->prepare
         (
             qq{ select measureset_id, feature, consequence, protein_position, amino_acids, hgvsc, hgvsp
                 FROM ClinVar_VEP
                 WHERE feature == ? 
                 and protein_position == ? 
             }
-        ),
+        );
 
 
-        clinvar_hgvs =>  $dbh->prepare
+        $search_handles{clinvar_hgvs} =  $dbh->prepare
         (
             qq{ select hgvsc, hgvsp
                 FROM ClinVar_VEP
                 WHERE measureset_id == ? 
             }
-        ),
-
-        clinvar_id =>  $dbh->prepare
-        (
-            qq{ select pathogenic, clinical_significance, conflicted, all_traits 
-                FROM ClinVar
-                WHERE measureset_id == ? 
-            }
-        ),
-
-
-    );
+        );
+    }
 
     if (exists $tables{"\"main\".\"EvolutionaryTrace\""}){
         $search_handles{et} = $dbh->prepare
@@ -1876,6 +1896,7 @@ sub readTranscriptDatabase{
 
 ###########################################################
 sub getClinvarMatches{
+    return if not  $search_handles{clinvar_pos} or not $search_handles{clinvar_hgvs};
     my $var = shift;
     my %clinvar = ();#keys are HGMD fields, values are array refs of values
     my @results = ();
@@ -1913,6 +1934,7 @@ sub getClinvarMatches{
 
 ###########################################################
 sub getHgmdMatches{
+    return if not  $search_handles{HGMD} or not $search_handles{hgmd_hgvs};
     my $var = shift;
     my @results = ();
     my @hgmd_fields = 
