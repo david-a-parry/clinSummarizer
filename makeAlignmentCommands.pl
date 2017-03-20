@@ -26,11 +26,7 @@ my $gene_db            = "$RealBin/genes/gene_database.db";
 my $not_reportable_cov = "$RealBin/bed_files/not_reportable_coding_exons_GRCh37.bed";
 my $tmp_dir            = "$ENV{HOME}/scratch/tmp/";
 my $freq               = 0.01;
-my @interval_list      = 
-(
-    "$RealBin/bed_files/reportable_genes_GRCh37.bed",
-    "$RealBin/bed_files/not_reportable_genes_GRCh37.bed",
-);
+my @interval_list      = ();
 my $script_dir = "sub_scripts";
 
 my $threads = 8;
@@ -701,9 +697,7 @@ sub usage{
         $RealBin/exe_bundle/picard/picard-tools-2.1.1/picard.jar
 
     -l,--list FILE(s)
-        Interval list(s) to use with GATK commands. Default =
-        $RealBin/bed_files/reportable_genes_GRCh37.bed and
-        $RealBin/bed_files/not_reportable_genes_GRCh37.bed
+        Interval list(s) to use with GATK commands. Default = NONE
     
     -e,--email STRING
         address to email script messages to
@@ -745,7 +739,7 @@ sub usage{
 
     --fasta FILE     
         Genome reference fasta sequence. Default =
-        $RealBin/bed_files/capture_regions_GRCh37.bed
+        $RealBin/ref_bundle/hs37d5.fa
     
     --gene_list FILE
         TSV file of gene symbol, expected inheritance pattern and associated
@@ -761,12 +755,12 @@ sub usage{
         Mills and 1000 genomes indels for indelrealignment. Default =
         $RealBin/ref_bundle/Mills_and_1000G_gold_standard.indels.b37.vcf
 
-    --reportable_cov FILE
+    --reportable_bed FILE
         Bed file of regions in reportable genes to analyze coverage in (e.g.
         coding exons). Default =
         "$RealBin/bed_files/reportable_coding_exons_GRCh37.bed
 
-    --not_reportable_cov FILE
+    --not_reportable_bed FILE
         Bed file of regions in non-reportable genes to analyze coverage in -
         default = "$RealBin/bed_files/not_reportable_coding_exons_GRCh37.bed
 
