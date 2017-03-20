@@ -44,6 +44,7 @@ my %opts =
 );
 GetOptions(
     \%opts,
+    'a|AF=f',                     #AF cutoff within VCF
     'b|allele_balance=f{,}',      #min and optional max alt allele ratio per sample call
     'c|coverage=s{,}',            #directories with depth of GATK coverage data for each sample
     'cadd_cutoff=f',
@@ -57,6 +58,7 @@ GetOptions(
     'manual',
     'n|non_reportable_regions=s', #bed of regions in non-reportable genes for calculating coverage
     'o|output_prefix=s',          #output will be named prefixsamplename.xlsx
+    'pathogenic',                 #only output variants if they're disease causing in clinvar/hgmd or LoF or affect CDD feature residue
     'p|progress',                 #show a progress bar?
     'q|fastqc_dir=s',             #directory with samples fastqc results
     'r|reportable_regions=s',     #bed of regions in reportable genes for calculating coverage
@@ -93,6 +95,17 @@ qw /
     transcript_ablation
     transcript_amplification
 /;
+my %lof_classes = map {$_ => undef} 
+qw /
+    frameshift_variant
+    initiator_codon_variant
+    splice_acceptor_variant
+    splice_donor_variant
+    stop_gained
+    stop_lost
+    transcript_ablation
+/;
+
 
 #open VCF, get samples and get VEP annotations
 informUser("Checking input VCF\n");
@@ -764,6 +777,11 @@ sub assessVariant{
     my @vep_csq = getVepCsq(\@split);
     my $ref  = VcfReader::getVariantField(\@split, 'REF');
     my @alts = split(",", VcfReader::getVariantField(\@split, 'ALT'));
+    my $qual = VcfReader::getVariantField(\@split, 'QUAL');
+    my $filter = VcfReader::getVariantField(\@split, 'FILTER');
+    my $an = VcfReader::getVariantInfoField(\@split, "AN");
+    my @af = split(",",  VcfReader::getVariantInfoField(\@split, "AF") );
+    my @ac = split(",",  VcfReader::getVariantInfoField(\@split, "AC") );
     my @vep_alts = VcfReader::altsToVepAllele
     (
         ref  => $ref,
@@ -777,7 +795,9 @@ sub assessVariant{
         my @row = ();#array of values for output to spreadsheet row
         #skip missing alleles
         next if ($min{$al}->{ORIGINAL_ALT} eq '*');
-        
+        if ($opts{a}){#filter on AF field in VCF
+            next if $af[$al-1] >= $opts{a};
+        }
         #get hash of sample names to array of sample genotype fields
         my %sample_genos = getSamplesWithAllele(\@split, $min{$al});
         next if not keys %sample_genos;#no sample with valid genotype
@@ -820,8 +840,10 @@ sub assessVariant{
         push @row, $cadd_score;
 
         #get HGMD and ClinVar matches
-        push @row, addHgmdMatches($min{$al}, $csq_to_report, $most_damaging_csq);
-        push @row, addClinvarMatches($min{$al}, $csq_to_report, $most_damaging_csq);
+        my ($hgmd, $hgmd_dm)  = addHgmdMatches($min{$al}, $csq_to_report, $most_damaging_csq);
+        push @row, @$hgmd; 
+        my ($clinvar, $clinvar_path) = addClinvarMatches($min{$al}, $csq_to_report, $most_damaging_csq);
+        push @row, @$clinvar;
         
         #output frequency values
         push @row, $dbsnp_freq >= 0 ? $dbsnp_freq : "";
@@ -835,13 +857,24 @@ sub assessVariant{
             push @row, $min{$al}->{$f};
         }
         #push @row, VcfReader::getVariantField(\@split, 'ID');
-        push @row, VcfReader::getVariantField(\@split, 'QUAL');
-        push @row, VcfReader::getVariantField(\@split, 'FILTER');
-
+        push @row, $qual;
+        push @row, $filter;
+        push @row, $an;
+        push @row, $af[$al-1];
+        push @row, $ac[$al-1];
         #record these details against each sample with variant
         my $sheet = "Other";
         if (exists $functional_classes{$most_damaging_csq}){
-            $sheet = "Functional";
+            if ( $opts{pathogenic} ){
+                if (( $clinvar_path or $hgmd_dm or 
+                 exists $lof_classes{$most_damaging_csq} 
+                 or $csq_to_report->{cdd_feature_residues} ) 
+                ){
+                    $sheet = "Functional";
+                }
+            }else{
+                $sheet = "Functional";
+            }
         }
         foreach my $s (keys %sample_genos){
             push @{$sample_vars{$s}->{$sheet}}, [@{$sample_genos{$s}}, @row];
@@ -1125,8 +1158,10 @@ sub addHgmdMatches{
     my $csq = shift;
     my $most_damaging_csq = shift;
     my @h_matches = getHgmdMatches($var);
+    my $path = 0;
     my @results = ();
     if (@h_matches){
+        $path++ if grep { $_->{variant_class} =~ /^D[MP]$/ } @h_matches;
         foreach my $f 
         ( qw /
                 hgmd_id
@@ -1175,11 +1210,12 @@ sub addHgmdMatches{
               $search_handles{hgmd_id} -> errstr;
             while (my ($vc, $disease) = $search_handles{hgmd_id}->fetchrow_array()) {
                   push @aa_matches, "$desc:HGMD_$hgmd_id:$vc:$disease:$hgvsc:$hgvsp";
+                  $path++ if $vc =~ /^D[MP]$/;
             }
         }
     }
     push @results, join("\n", @aa_matches);
-    return @results;
+    return \@results, $path;
 }
     
 ###########################################################
@@ -1189,7 +1225,9 @@ sub addClinvarMatches{
     my $most_damaging_csq = shift;
     my @c_matches = getClinvarMatches($var);
     my @results = ();
+    my $path = 0;
     if (@c_matches){
+        $path++ if ( grep { $_->{clinical_significance} =~ /Pathogenic/ } @c_matches);
         foreach my $f 
         ( qw /
                 measureset_id
@@ -1239,11 +1277,12 @@ sub addClinvarMatches{
                     $search_handles{clinvar_id}->fetchrow_array()
             ) {
                 push @aa_matches,  "$desc:ClinVar_$clinvar_id:$clinsig:$disease:$hgvsc:$hgvsp";
+                $path++ if $clinsig =~ /Pathogenic/; 
             }
         }
     }
     push @results, join("\n", @aa_matches);
-    return @results;
+    return \@results, $path;
 }
 
 ###########################################################
@@ -1440,9 +1479,9 @@ sub checkSnpMatches {
     my ( $min_allele, $snp_line ) = @_;
     my %snp_min = VcfReader::minimizeAlleles($snp_line);
     foreach my $snp_allele ( keys %snp_min ) {
-        $min_allele->{CHROM} =~ s/^chr//;
-        $snp_min{$snp_allele}->{CHROM} =~ s/^chr//;
-        next if $min_allele->{CHROM} ne $snp_min{$snp_allele}->{CHROM};
+        (my $m_chr = $min_allele->{CHROM}) =~ s/^chr//;
+        (my $s_chr = $snp_min{$snp_allele}->{CHROM}) =~ s/^chr//;
+        next if $m_chr ne $s_chr;
         next if $min_allele->{POS} ne $snp_min{$snp_allele}->{POS};
         next if $min_allele->{REF} ne $snp_min{$snp_allele}->{REF};
         next if $min_allele->{ALT} ne $snp_min{$snp_allele}->{ALT};
@@ -1964,6 +2003,9 @@ sub getHeaders{
             Alt
             Qual
             Filter
+            AF
+            AC
+            AN
         /
     );
 
@@ -2076,6 +2118,11 @@ Optional allele frequency cutoff for dbsnp, evs, exac. Variants with an allele
 frequency above this value will be removed from the output. Valid values are
 between 0.00 and 1.00.
 
+=item B<-a    --AF>
+
+Optional allele frequency cutoff for within VCF. Alleles with AF INFO fields 
+higher than this value will be filtered.
+
 =item B<-g    --gq>
 
 Optional minimum genotype quality (GQ) for calls. Sample genotypes will only be
@@ -2108,6 +2155,11 @@ sample.
 
 Only consider variants with a cadd score equal to or greater than this value
 for outputting into the -u/--summary XLSX file.
+
+=item B<--pathogenic>
+
+Only output variants if they're disease causing in clinvar/hgmd, LoF or affect 
+CDD feature residues.
 
 =item B<-p    --progress>
 
