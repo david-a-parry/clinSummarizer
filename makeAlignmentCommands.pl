@@ -10,7 +10,7 @@ use FindBin qw($RealBin);
 my $fasta              = "$RealBin/ref_bundle/hs37d5.fa";
 my $mills              = "$RealBin/ref_bundle/Mills_and_1000G_gold_standard.indels.b37.vcf";
 my $indels             = "$RealBin/ref_bundle/1000G_phase1.indels.b37.vcf";
-my $dbsnp              = "$RealBin/ref_bundle/dbSNP146/All_20151104.vcf.gz";
+my $dbsnp              = "$RealBin/ref_bundle/dbSNP147/All_20160601.vcf.gz";
 my $evs                = "$RealBin/ref_bundle/ESP6500SI-V2-SSA137.GRCh38-liftover.combined.vcf.gz";
 my $exac               = "$RealBin/ref_bundle/ExAC.r0.3.sites.vep.vcf.gz";
 my $cadd               = "$RealBin/ref_bundle/cadd/v1.3/";
@@ -75,6 +75,7 @@ GetOptions(
     "vcf_name=s"          => \$vcf_name,
     "vep_dir=s"           => \$vep_dir,
     "x|tmp_dir=s"         => \$tmp_dir,
+    "z|skip_mark_dups",
 ) or die "Syntax error!\n";
 usage() if $config{h};
 
@@ -305,16 +306,17 @@ EOT
 
     #DEDUP
             my $in_bam = $out_bam;
-            $out_bam =~ s/\.bam$//;
-            my $metrics_file = "$out_bam" ."_rmdups.metrics";
-            $out_bam .= "_rmdups.bam";
-            push @intermediate, $out_bam;#remove dedupped
-            print $SCRIPT <<EOT
+            unless ($config{z}){#skip mark duplicates if -z/--skip_mark_dups specified
+                $out_bam =~ s/\.bam$//;
+                my $metrics_file = "$out_bam" ."_rmdups.metrics";
+                $out_bam .= "_rmdups.bam";
+                push @intermediate, $out_bam;#remove dedupped
+                print $SCRIPT <<EOT
 java -Djava.io.tmpdir=$tmp_dir -Xmx$mem -jar $picard MarkDuplicates I="$in_bam" O="$out_bam" M="$metrics_file" CREATE_INDEX=TRUE TMP_DIR=$tmp_dir 
 
 EOT
 ;
-
+            }
 
     #INDELREALIGN
             $in_bam = $out_bam;
@@ -676,6 +678,9 @@ sub usage{
     -d,--depth_intervals FILE
         Bed file for DepthOfCoverage. Default =
         $RealBin/bed_files/capture_regions_GRCh37.bed
+
+    -z    --skip_mark_dups     
+        Do not run mark duplicate commands
 
     -n,--print_scripts
         Print names of created scripts once finished (if not using --qsub)
