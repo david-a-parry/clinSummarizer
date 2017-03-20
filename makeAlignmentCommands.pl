@@ -493,6 +493,13 @@ EOT
 EOT
 ;
     }
+    my $cov_opts = '';
+    if ($not_reportable_cov){
+        $cov_opts .= "-n $not_reportable_cov ";
+    }
+    if ($reportable_cov){
+        $cov_opts .= "-r $reportable_cov ";
+    }
     print $SUBSCRIPT <<EOT
 #\$ -cwd
 #\$ -V
@@ -504,7 +511,7 @@ EOT
 module load igmm/libs/htslib/1.3
 module load igmm/apps/samtools/1.2
 
-$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $RealBin/genes/$gene_db   -n $not_reportable_cov -r $reportable_cov -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list
+$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $RealBin/genes/$gene_db  $cov_opts  -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list
 
 EOT
 ;
