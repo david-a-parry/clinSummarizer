@@ -19,11 +19,11 @@ my $gatk               = "$RealBin/exe_bundle/GATK/v3.5/GenomeAnalysisTK.jar";
 my $picard             = "$RealBin/exe_bundle/picard/picard-tools-2.1.1/picard.jar";
 my $vep_dir            = "$RealBin/exe_bundle/variant_effect_predictor";
 my $maxentscan         = "$RealBin/exe_bundle/maxentscan/fordownload/";
-my $depth_intervals    = "$RealBin/bed_files/capture_regions_GRCh37.bed";
-my $reportable_cov     = "$RealBin/bed_files/reportable_coding_exons_GRCh37.bed";
+my $depth_intervals   ;# = "$RealBin/bed_files/capture_regions_GRCh37.bed";
+my $reportable_cov    ;# = "$RealBin/bed_files/reportable_coding_exons_GRCh37.bed";
 my $gene_list          = "$RealBin/genes/gene_inheritance_and_diseases.txt";
 my $gene_db            = "$RealBin/genes/gene_database.db";
-my $not_reportable_cov = "$RealBin/bed_files/not_reportable_coding_exons_GRCh37.bed";
+my $not_reportable_cov;# = "$RealBin/bed_files/not_reportable_coding_exons_GRCh37.bed";
 my $tmp_dir            = "$ENV{HOME}/scratch/tmp/";
 my $freq               = 0.01;
 my @interval_list      = ();
@@ -507,7 +507,7 @@ EOT
 module load igmm/libs/htslib/1.3
 module load igmm/apps/samtools/1.2
 
-$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $RealBin/genes/$gene_db  $cov_opts  -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list
+$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $gene_db  $cov_opts  -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list
 
 EOT
 ;
@@ -679,8 +679,7 @@ sub usage{
         Allele frequency cutoff for reporting variants in final summary document
 
     -d,--depth_intervals FILE
-        Bed file for DepthOfCoverage. Default =
-        $RealBin/bed_files/capture_regions_GRCh37.bed
+        Bed file for DepthOfCoverage. Default = NONE
 
     -z    --skip_mark_dups     
         Do not run mark duplicate commands
@@ -757,12 +756,11 @@ sub usage{
 
     --reportable_bed FILE
         Bed file of regions in reportable genes to analyze coverage in (e.g.
-        coding exons). Default =
-        "$RealBin/bed_files/reportable_coding_exons_GRCh37.bed
+        coding exons). Default = NONE
 
     --not_reportable_bed FILE
-        Bed file of regions in non-reportable genes to analyze coverage in -
-        default = "$RealBin/bed_files/not_reportable_coding_exons_GRCh37.bed
+        Bed file of regions in non-reportable genes to analyze coverage in.
+        Default = NONE
 
     --vep_dir DIR       
         directory containing variant_effect_predictor.pl script and offline
