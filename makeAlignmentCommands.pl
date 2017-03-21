@@ -37,40 +37,43 @@ my $date = strftime( "%d-%m-%y", localtime );
 my $vcf_name = 'panel';
 my $outdir;
 my $help;
-
-my %config;
+my @allele_balance = ();
+my %config  = ( b => \@allele_balance ) ;
 GetOptions(
     \%config,
-    "c|cadd_dir=s"        => \$cadd,
-    "d|depth_intervals=s" => \$depth_intervals,
-    "e|email=s"           => \$email,
-    "evs=s"               => \$evs,
-    "exac=s"              => \$exac,
-    "f|freq=f"            => \$freq,
-    "fasta=s"             => \$fasta,
-    "g|gatk=s"            => \$gatk,
-    "gene_database=s"     => \$gene_db,
-    "gene_list=s"         => \$gene_list,
+    'b|allele_balance=f{,}',      #min and optional max alt allele ratio per sample call
+    "c|cadd_dir=s"         => \$cadd,
+    "call_depth=i",
+    "d|depth_intervals=s"  => \$depth_intervals,
+    "e|email=s"            => \$email,
+    "evs=s"                => \$evs,
+    "exac=s"               => \$exac,
+    "f|freq=f"             => \$freq,
+    "fasta=s"              => \$fasta,
+    "g|gatk=s"             => \$gatk,
+    "gq=f",
+    "gene_database=s"      => \$gene_db,
+    "gene_list=s"          => \$gene_list,
     "h|help",
-    "i|indels=s"          => \$indels,
-    "l|list=s{,}"         => \@interval_list,
-    "maxenstscan=s"       => \$maxentscan,
-    "m|mem=i"             => \$mem,
-    "mills=s"             => \$mills,
+    "i|indels=s"           => \$indels,
+    "l|list=s{,}"          => \@interval_list,
+    "maxenstscan=s"        => \$maxentscan,
+    "m|mem=i"              => \$mem,
+    "mills=s"              => \$mills,
     "n|print_scripts",
-    "o|outdir=s"          => \$outdir,
+    "o|outdir=s"           => \$outdir,
     "print_scripts",
-    "p|picard=s"          => \$picard,
+    "p|picard=s"           => \$picard,
     "q|qsub",
-    "reportable_bed"      => \$reportable_cov,
-    "not_reportable_bed"  => \$not_reportable_cov,
-    "r|runtime=i"         => \$runtime,
-    "s|script_dir=s"      => \$script_dir,
-    "t|threads=i"         => \$threads,
-    "v|vmem=i"            => \$vmem,
-    "vcf_name=s"          => \$vcf_name,
-    "vep_dir=s"           => \$vep_dir,
-    "x|tmp_dir=s"         => \$tmp_dir,
+    "reportable_bed=s"     => \$reportable_cov,
+    "not_reportable_bed=s" => \$not_reportable_cov,
+    "r|runtime=i"          => \$runtime,
+    "s|script_dir=s"       => \$script_dir,
+    "t|threads=i"          => \$threads,
+    "v|vmem=i"             => \$vmem,
+    "vcf_name=s"           => \$vcf_name,
+    "vep_dir=s"            => \$vep_dir,
+    "x|tmp_dir=s"          => \$tmp_dir,
     "z|skip_mark_dups",
 ) or die "Syntax error!\n";
 usage() if $config{h};
@@ -489,6 +492,16 @@ EOT
 EOT
 ;
     }
+    my $q_opts = '';
+    if ($config{gq}){
+        $q_opts .= "--gq $config{gq} ";
+    }
+    if ($config{call_depth}){
+        $q_opts .= "-d $config{call_depth} ";
+    }
+    if (@allele_balance){
+        $q_opts .= "-b " . join(" ", @allele_balance ) . " " ;
+    }
     my $cov_opts = '';
     if ($not_reportable_cov){
         $cov_opts .= "-n $not_reportable_cov ";
@@ -507,7 +520,7 @@ EOT
 module load igmm/libs/htslib/1.3
 module load igmm/apps/samtools/1.2
 
-$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $gene_db  $cov_opts  -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list
+$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $gene_db  $cov_opts  -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list $q_opts
 
 EOT
 ;
@@ -724,6 +737,22 @@ sub usage{
     -c,--cadd_dir DIR
         Directory containing pre-CADD-scored variants for scoring of output.
         Default = $RealBin/ref_bundle/cadd/v1.3/
+
+     --gq FLOAT
+        Optional minimum genotype quality (GQ) for calls. Sample genotypes will 
+        only be included in the sample_summaries output if greater than this 
+        value. 
+
+     -d,--depth INT
+        Optional minimum depth for sample calls. Genotype calls with a depth 
+        lower than this will not be included in the sample_summaries output.
+    
+     -b,--allele_balance FLOAT [FLOAT]      
+        Minimumn and optional maximum alt allele ratio per sample call for 
+        sample_summaries output. If one value is provided this will act as the 
+        minimum allele balance cutoff. If a second value is provided this will 
+        be used as a maximum allele balance cutoff (if only looking for 
+        heterozygous changes, for example). Valid values between 0.00 and 1.00.
 
     --dbsnp FILE
          dbSNP file. Default = $RealBin/ref_bundle/dbSNP146/All_20151104.vcf.gz
