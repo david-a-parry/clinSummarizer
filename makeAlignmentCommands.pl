@@ -386,6 +386,7 @@ EOT
 
 #################################################
 sub make_depth_scripts{
+    return if not $depth_intervals;
     foreach my $bam (@bams){
         my $f = fileparse($bam); 
         (my $stub = $f) =~ s/\.bam$//;
@@ -507,12 +508,16 @@ EOT
         $q_opts .= "-b " . join(" ", @allele_balance ) . " " ;
     }
     my $cov_opts = '';
-    if ($not_reportable_cov){
-        $cov_opts .= "-n $not_reportable_cov ";
+    if ($depth_intervals){
+        $cov_opts .= "-c $outdir/depth ";
+        if ($not_reportable_cov){
+            $cov_opts .= "-n $not_reportable_cov ";
+        }
+        if ($reportable_cov){
+            $cov_opts .= "-r $reportable_cov ";
+        }
     }
-    if ($reportable_cov){
-        $cov_opts .= "-r $reportable_cov ";
-    }
+    
     print $SUBSCRIPT <<EOT
 #\$ -cwd
 #\$ -V
@@ -524,7 +529,7 @@ EOT
 module load igmm/libs/htslib/1.3
 module load igmm/apps/samtools/1.2
 
-$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $gene_db  $cov_opts  -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list $q_opts
+$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $gene_db  $cov_opts  -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list $q_opts
 
 EOT
 ;
