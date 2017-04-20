@@ -29,10 +29,10 @@ my $freq               = 0.01;
 my @interval_list      = ();
 my $script_dir = "sub_scripts";
 
-my $threads = 8;
+my $threads = 1;
 my $mem = 4;
 my $vmem = 8;
-my $runtime = 4;
+my $runtime = 12;
 my $date = strftime( "%d-%m-%y", localtime );
 my $vcf_name = 'panel';
 my $outdir;
@@ -80,8 +80,14 @@ usage() if $config{h};
 
 usage("A file list is required!") if not @ARGV ;
 
+my $pvmem = int($vmem/$threads);
+$pvmem = ($pvmem * $threads) < $vmem ? $pvmem + 1 : $pvmem;
 $vmem .= "G";
 $mem .= "G";
+my $mem_and_threads = "#\$ -l h_vmem=$vmem";
+if ($threads > 1){
+    $mem_and_threads = "#\$ -l h_vmem=$pvmem\n#\$ -pe sharedmem $threads";
+}
 my $interval_string = "";
 foreach my $int (@interval_list){
     $interval_string .= "-L \"$int\" ";
@@ -278,9 +284,8 @@ EOT
 #\$ -V
 #\$ -e $script.stderr
 #\$ -o $script.stdout
-#\$ -pe sharedmem 8
+$mem_and_threads
 #\$ -l h_rt=$runtime:00:00
-#\$ -l h_vmem=$vmem
 . /etc/profile.d/modules.sh
 module load igmm/apps/bwa/0.7.12-r1039
 module load igmm/apps/samtools/1.2
@@ -450,9 +455,8 @@ EOT
 #\$ -V
 #\$ -e $gscript.stderr
 #\$ -o $gscript.stdout
-#\$ -pe sharedmem 8
+$mem_and_threads
 #\$ -l h_rt=$runtime:00:00
-#\$ -l h_vmem=$vmem
 . /etc/profile.d/modules.sh
 module load igmm/apps/R/3.2.2
 module load igmm/apps/jdk/1.8.0_66
@@ -694,7 +698,7 @@ sub usage{
     -d,--depth_intervals FILE
         Bed file for DepthOfCoverage. Default = NONE
 
-    -z    --skip_mark_dups     
+    -z,--skip_mark_dups     
         Do not run mark duplicate commands
 
     -n,--print_scripts
@@ -721,10 +725,10 @@ sub usage{
         amount of vmem for each script. Default = 8
 
     -t,--threads INT
-        no. threads for each command. Default = 8
+        no. threads for each command. Default = 1
 
     -r,--runtime INT
-        runtime in hours for each script. Default = 4
+        runtime in hours for each script. Default = 12
  
     -x,--tmp_dir DIR
         directory to use for temporary storage for commands. Default =
