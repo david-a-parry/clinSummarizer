@@ -457,7 +457,7 @@ EOT
 . /etc/profile.d/modules.sh
 module load igmm/apps/R/3.2.2
 module load igmm/apps/jdk/1.8.0_66
-module load igmm/libs/htslib/1.3
+module load igmm/libs/htslib/1.4
 module load igmm/apps/samtools/1.2
 
 $call_gatk -T GenotypeGVCFs -stand_call_conf 30 -stand_emit_conf 4  -D $dbsnp $interval_string $gs -o $dir/var.$vcf_name-$date.raw.vcf.gz $interval_string
@@ -501,7 +501,7 @@ EOT
 #\$ -l h_rt=$runtime:00:00
 #\$ -l h_vmem=$vmem
 . /etc/profile.d/modules.sh
-module load igmm/libs/htslib/1.3
+module load igmm/libs/htslib/1.4
 module load igmm/apps/samtools/1.2
 
 $samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $RealBin/genes/$gene_db   -n $not_reportable_cov -r $reportable_cov -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list
