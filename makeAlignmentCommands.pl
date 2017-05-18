@@ -19,70 +19,75 @@ my $gatk               = "$RealBin/exe_bundle/GATK/v3.5/GenomeAnalysisTK.jar";
 my $picard             = "$RealBin/exe_bundle/picard/picard-tools-2.1.1/picard.jar";
 my $vep_dir            = "$RealBin/exe_bundle/variant_effect_predictor";
 my $maxentscan         = "$RealBin/exe_bundle/maxentscan/fordownload/";
-my $depth_intervals    = "$RealBin/bed_files/capture_regions_GRCh37.bed";
-my $reportable_cov     = "$RealBin/bed_files/reportable_coding_exons_GRCh37.bed";
+my $depth_intervals   ;# = "$RealBin/bed_files/capture_regions_GRCh37.bed";
+my $reportable_cov    ;# = "$RealBin/bed_files/reportable_coding_exons_GRCh37.bed";
 my $gene_list          = "$RealBin/genes/gene_inheritance_and_diseases.txt";
 my $gene_db            = "$RealBin/genes/gene_database.db";
-my $not_reportable_cov = "$RealBin/bed_files/not_reportable_coding_exons_GRCh37.bed";
+my $not_reportable_cov;# = "$RealBin/bed_files/not_reportable_coding_exons_GRCh37.bed";
 my $tmp_dir            = "$ENV{HOME}/scratch/tmp/";
 my $freq               = 0.01;
-my @interval_list      = 
-(
-    "$RealBin/bed_files/reportable_genes_GRCh37.bed",
-    "$RealBin/bed_files/not_reportable_genes_GRCh37.bed",
-);
+my @interval_list      = ();
 my $script_dir = "sub_scripts";
 
-my $threads = 8;
+my $threads = 1;
 my $mem = 4;
 my $vmem = 8;
-my $runtime = 4;
+my $runtime = 12;
 my $date = strftime( "%d-%m-%y", localtime );
 my $vcf_name = 'panel';
 my $outdir;
 my $help;
-
-my %config;
+my @allele_balance = ();
+my %config  = ( b => \@allele_balance ) ;
 GetOptions(
     \%config,
-    "c|cadd_dir=s"        => \$cadd,
-    "d|depth_intervals=s" => \$depth_intervals,
-    "e|email=s"           => \$email,
-    "evs=s"               => \$evs,
-    "exac=s"              => \$exac,
-    "f|freq=f"            => \$freq,
-    "fasta=s"             => \$fasta,
-    "g|gatk=s"            => \$gatk,
-    "gene_database=s"     => \$gene_db,
-    "gene_list=s"         => \$gene_list,
+    'b|allele_balance=f{,}',      #min and optional max alt allele ratio per sample call
+    "c|cadd_dir=s"         => \$cadd,
+    "call_depth=i",
+    "d|depth_intervals=s"  => \$depth_intervals,
+    "e|email=s"            => \$email,
+    "evs=s"                => \$evs,
+    "exac=s"               => \$exac,
+    "f|freq=f"             => \$freq,
+    "fasta=s"              => \$fasta,
+    "g|gatk=s"             => \$gatk,
+    "gq=f",
+    "gene_database=s"      => \$gene_db,
+    "gene_list=s"          => \$gene_list,
     "h|help",
-    "i|indels=s"          => \$indels,
-    "l|list=s{,}"         => \@interval_list,
-    "maxenstscan=s"       => \$maxentscan,
-    "m|mem=i"             => \$mem,
-    "mills=s"             => \$mills,
+    "i|indels=s"           => \$indels,
+    "l|list=s{,}"          => \@interval_list,
+    "maxenstscan=s"        => \$maxentscan,
+    "m|mem=i"              => \$mem,
+    "mills=s"              => \$mills,
     "n|print_scripts",
-    "o|outdir=s"          => \$outdir,
+    "o|outdir=s"           => \$outdir,
     "print_scripts",
-    "p|picard=s"          => \$picard,
+    "p|picard=s"           => \$picard,
     "q|qsub",
-    "reportable_bed"      => \$reportable_cov,
-    "not_reportable_bed"  => \$not_reportable_cov,
-    "r|runtime=i"         => \$runtime,
-    "s|script_dir=s"      => \$script_dir,
-    "t|threads=i"         => \$threads,
-    "v|vmem=i"            => \$vmem,
-    "vcf_name=s"          => \$vcf_name,
-    "vep_dir=s"           => \$vep_dir,
-    "x|tmp_dir=s"         => \$tmp_dir,
+    "reportable_bed=s"     => \$reportable_cov,
+    "not_reportable_bed=s" => \$not_reportable_cov,
+    "r|runtime=i"          => \$runtime,
+    "s|script_dir=s"       => \$script_dir,
+    "t|threads=i"          => \$threads,
+    "v|vmem=i"             => \$vmem,
+    "vcf_name=s"           => \$vcf_name,
+    "vep_dir=s"            => \$vep_dir,
+    "x|tmp_dir=s"          => \$tmp_dir,
     "z|skip_mark_dups",
 ) or die "Syntax error!\n";
 usage() if $config{h};
 
 usage("A file list is required!") if not @ARGV ;
 
+my $pvmem = int($vmem/$threads);
+$pvmem = ($pvmem * $threads) < $vmem ? $pvmem + 1 : $pvmem;
 $vmem .= "G";
 $mem .= "G";
+my $mem_and_threads = "#\$ -l h_vmem=$vmem";
+if ($threads > 1){
+    $mem_and_threads = "#\$ -l h_vmem=$pvmem\n#\$ -pe sharedmem $threads";
+}
 my $interval_string = "";
 foreach my $int (@interval_list){
     $interval_string .= "-L \"$int\" ";
@@ -279,9 +284,8 @@ EOT
 #\$ -V
 #\$ -e $script.stderr
 #\$ -o $script.stdout
-#\$ -pe sharedmem 8
+$mem_and_threads
 #\$ -l h_rt=$runtime:00:00
-#\$ -l h_vmem=$vmem
 . /etc/profile.d/modules.sh
 module load igmm/apps/bwa/0.7.12-r1039
 module load igmm/apps/samtools/1.2
@@ -382,6 +386,7 @@ EOT
 
 #################################################
 sub make_depth_scripts{
+    return if not $depth_intervals;
     foreach my $bam (@bams){
         my $f = fileparse($bam); 
         (my $stub = $f) =~ s/\.bam$//;
@@ -451,9 +456,8 @@ EOT
 #\$ -V
 #\$ -e $gscript.stderr
 #\$ -o $gscript.stdout
-#\$ -pe sharedmem 8
+$mem_and_threads
 #\$ -l h_rt=$runtime:00:00
-#\$ -l h_vmem=$vmem
 . /etc/profile.d/modules.sh
 module load igmm/apps/R/3.2.2
 module load igmm/apps/jdk/1.8.0_66
@@ -493,6 +497,27 @@ EOT
 EOT
 ;
     }
+    my $q_opts = '';
+    if ($config{gq}){
+        $q_opts .= "--gq $config{gq} ";
+    }
+    if ($config{call_depth}){
+        $q_opts .= "-d $config{call_depth} ";
+    }
+    if (@allele_balance){
+        $q_opts .= "-b " . join(" ", @allele_balance ) . " " ;
+    }
+    my $cov_opts = '';
+    if ($depth_intervals){
+        $cov_opts .= "-c $outdir/depth ";
+        if ($not_reportable_cov){
+            $cov_opts .= "-n $not_reportable_cov ";
+        }
+        if ($reportable_cov){
+            $cov_opts .= "-r $reportable_cov ";
+        }
+    }
+    
     print $SUBSCRIPT <<EOT
 #\$ -cwd
 #\$ -V
@@ -504,7 +529,7 @@ EOT
 module load igmm/libs/htslib/1.4
 module load igmm/apps/samtools/1.2
 
-$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $RealBin/genes/$gene_db   -n $not_reportable_cov -r $reportable_cov -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -c $outdir/depth -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list
+$samplesummarizer -i $dir/vep.var.$vcf_name-$date.filters.vcf.gz  -t $gene_db  $cov_opts  -s $dbsnp -e $evs -x $exac -z $cadd  -q $outdir/fastqc -f $freq -o $outdir/sample_summaries/ -u $outdir/sample_summaries/summary.xlsx -l $gene_list $q_opts
 
 EOT
 ;
@@ -676,10 +701,9 @@ sub usage{
         Allele frequency cutoff for reporting variants in final summary document
 
     -d,--depth_intervals FILE
-        Bed file for DepthOfCoverage. Default =
-        $RealBin/bed_files/capture_regions_GRCh37.bed
+        Bed file for DepthOfCoverage. Default = NONE
 
-    -z    --skip_mark_dups     
+    -z,--skip_mark_dups     
         Do not run mark duplicate commands
 
     -n,--print_scripts
@@ -694,9 +718,7 @@ sub usage{
         $RealBin/exe_bundle/picard/picard-tools-2.1.1/picard.jar
 
     -l,--list FILE(s)
-        Interval list(s) to use with GATK commands. Default =
-        $RealBin/bed_files/reportable_genes_GRCh37.bed and
-        $RealBin/bed_files/not_reportable_genes_GRCh37.bed
+        Interval list(s) to use with GATK commands. Default = NONE
     
     -e,--email STRING
         address to email script messages to
@@ -708,10 +730,10 @@ sub usage{
         amount of vmem for each script. Default = 8
 
     -t,--threads INT
-        no. threads for each command. Default = 8
+        no. threads for each command. Default = 1
 
     -r,--runtime INT
-        runtime in hours for each script. Default = 4
+        runtime in hours for each script. Default = 12
  
     -x,--tmp_dir DIR
         directory to use for temporary storage for commands. Default =
@@ -724,6 +746,22 @@ sub usage{
     -c,--cadd_dir DIR
         Directory containing pre-CADD-scored variants for scoring of output.
         Default = $RealBin/ref_bundle/cadd/v1.3/
+
+     --gq FLOAT
+        Optional minimum genotype quality (GQ) for calls. Sample genotypes will 
+        only be included in the sample_summaries output if greater than this 
+        value. 
+
+     -d,--depth INT
+        Optional minimum depth for sample calls. Genotype calls with a depth 
+        lower than this will not be included in the sample_summaries output.
+    
+     -b,--allele_balance FLOAT [FLOAT]      
+        Minimumn and optional maximum alt allele ratio per sample call for 
+        sample_summaries output. If one value is provided this will act as the 
+        minimum allele balance cutoff. If a second value is provided this will 
+        be used as a maximum allele balance cutoff (if only looking for 
+        heterozygous changes, for example). Valid values between 0.00 and 1.00.
 
     --dbsnp FILE
          dbSNP file. Default = $RealBin/ref_bundle/dbSNP146/All_20151104.vcf.gz
@@ -738,7 +776,7 @@ sub usage{
 
     --fasta FILE     
         Genome reference fasta sequence. Default =
-        $RealBin/bed_files/capture_regions_GRCh37.bed
+        $RealBin/ref_bundle/hs37d5.fa
     
     --gene_list FILE
         TSV file of gene symbol, expected inheritance pattern and associated
@@ -754,14 +792,13 @@ sub usage{
         Mills and 1000 genomes indels for indelrealignment. Default =
         $RealBin/ref_bundle/Mills_and_1000G_gold_standard.indels.b37.vcf
 
-    --reportable_cov FILE
+    --reportable_bed FILE
         Bed file of regions in reportable genes to analyze coverage in (e.g.
-        coding exons). Default =
-        "$RealBin/bed_files/reportable_coding_exons_GRCh37.bed
+        coding exons). Default = NONE
 
-    --not_reportable_cov FILE
-        Bed file of regions in non-reportable genes to analyze coverage in -
-        default = "$RealBin/bed_files/not_reportable_coding_exons_GRCh37.bed
+    --not_reportable_bed FILE
+        Bed file of regions in non-reportable genes to analyze coverage in.
+        Default = NONE
 
     --vep_dir DIR       
         directory containing variant_effect_predictor.pl script and offline
