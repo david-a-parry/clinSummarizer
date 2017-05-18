@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-
+use FindBin qw($RealBin);
 print STDERR <<EOT
 
 Usage: $0 [genome version] [gene_inheritance_and_diseases.txt]
@@ -38,7 +38,7 @@ sub getGeneRegions{
     foreach my $r (qw /reportable non-reportable/){
         next if not @{$genes{$r}};
         print STDERR "Retrieving genomic regions for $r genes.\n";
-        my $cmd = "perl genomeUtils/coordinatesFromGenes.pl -j -g ". 
+        my $cmd = "perl $RealBin/genomeUtils/coordinatesFromGenes.pl -j -g ". 
                   join(" ", @{$genes{$r}});
         if ($build eq 'hg19' or $build eq 'GRCh37'){
             $cmd .= ' -r ';
@@ -62,7 +62,7 @@ sub getCodingExons{
     foreach my $r (qw /reportable non-reportable/){
         next if not @{$genes{$r}};
         print STDERR "Retrieving coding exons for $r genes.\n";
-        my $cmd = "perl getExonsFromUcsc/getExonsFromUcsc.pl -m -k -c -g ". 
+        my $cmd = "perl $RealBin/getExonsFromUcsc/getExonsFromUcsc.pl -m -k -c -g ". 
                    join(" ", @{$genes{$r}}) ; 
         if ($build eq 'GRCh38' or $build eq 'hg38'){
             $cmd .= " -b hg38";
