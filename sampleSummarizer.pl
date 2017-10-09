@@ -1697,6 +1697,7 @@ sub checkGeneInheritanceFile{
     return if not $opts{l};
     open (my $LIST, $opts{l}) or die "Can't open gene list '$opts{l}' for reading: $!\n";
     while (my $line = <$LIST>){
+        next if $line =~ /^#/;
         chomp $line;
         next if not $line;
         my @split = split("\t", $line); 

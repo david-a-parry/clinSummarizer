@@ -101,6 +101,7 @@ sub getGenes{
     $genes{reportable} = [];
     $genes{"non-reportable"} = [];
     while (my $line = <$GENES>){
+        next if $line =~ /^#/;
         $n++;
         chomp $line;
         my ($s, undef, $r, undef, $nc) = split(/\t/, $line);
