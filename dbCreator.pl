@@ -1150,7 +1150,7 @@ sub outputTranscriptInfo{
                  $ccds,
                  $uniprot,
                  $score,
-                 $rank,
+                 $r,
             ); 
             $n += addRow($insth, \@values, $selth);
             if ($n == $max_commit ){
