@@ -16,3 +16,4 @@ SLC39A13	AR	reportable	Spondylocheirodysplasia, Ehlers-Danlos syndrome-like
 TNXB	AR	reportable	Ehlers-Danlos syndrome due to tenascin X deficiency
 ZNF469	AR	Non-reportable	Brittle cornea syndrome 1
 DSE	AR	Non-reportable	?Ehlers-Danlos syndrome, musculocontractural type 2
+RNU4ATAC	AR	reportable	MOP	non-coding

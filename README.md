@@ -35,10 +35,11 @@ subdirectory and call it 'capture_regions_GRCh37.bed'.
 You will also need a tab delimited file with four columns indicating the names 
 of your target gene names, the associated inheritance pattern, whether they are 
 in the reportable or non-reportable category and the associated medical 
-condition. For an example see 'genes/example_gene_inheritance_and_diseases.txt' 
-in this directory. The default name for this file is 
-'gene_inheritance_and_diseases.txt' and it should be placed in the 'genes' 
-subdirectory.
+condition. For non-coding genes which for which you want to treat each exon as 
+a coding exon, add an optional fifth value 'non-coding'. For an example see 
+'genes/example_gene_inheritance_and_diseases.txt' in this directory. 
+The default name for this file is 'gene_inheritance_and_diseases.txt' and it 
+should be placed in the 'genes' subdirectory.
 
 Once you have this information you can run the 'updateBedFiles.pl' script to 
 create BED files for the target genes specified in your 
