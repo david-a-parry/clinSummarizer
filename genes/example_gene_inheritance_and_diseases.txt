@@ -1,3 +1,4 @@
+#GENE	INHERITANCE	Reportable/Non-reportable	Condition	non-coding?	canonical_transcript
 ABCC6	AR	reportable	Pseudoxanthoma elasticum, forme fruste
 ADAMTS2	AR	reportable	Ehlers-Danlos syndrome, type VIIC
 B3GALT6	AR	reportable	Ehlers-Danlos syndrome, progeroid type, 2
@@ -16,4 +17,5 @@ SLC39A13	AR	reportable	Spondylocheirodysplasia, Ehlers-Danlos syndrome-like
 TNXB	AR	reportable	Ehlers-Danlos syndrome due to tenascin X deficiency
 ZNF469	AR	Non-reportable	Brittle cornea syndrome 1
 DSE	AR	Non-reportable	?Ehlers-Danlos syndrome, musculocontractural type 2
-RNU4ATAC	AR	reportable	MOP	non-coding
+RNU4ATAC	AR	reportable	MOPD	non-coding
+TOP3A	AR	non-reportable	MOPD	-	ENST00000542570
