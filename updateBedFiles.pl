@@ -25,7 +25,9 @@ if ($build !~ /^(GRCh3[78]|hg(19|38))$/){
 my $gene_list = shift;
 $gene_list ||= "genes/gene_inheritance_and_diseases.txt";
 
-my %genes = getGenes();
+my %genes = ();
+my %non_coding = ();
+getGenes();
 
 getCodingExons();
 
@@ -62,13 +64,26 @@ sub getCodingExons{
     foreach my $r (qw /reportable non-reportable/){
         next if not @{$genes{$r}};
         print STDERR "Retrieving coding exons for $r genes.\n";
-        my $cmd = "perl $RealBin/getExonsFromUcsc/getExonsFromUcsc.pl -m -k -c -g ". 
-                   join(" ", @{$genes{$r}}) ; 
+        my $g = join(" ", @{$genes{$r}}) ; 
+        if ($non_coding{$r}){
+            $g = join(" ", grep{ !$non_coding{$r}->{$_} } @{$genes{$r}});
+        }
+        my $cmd = "perl $RealBin/getExonsFromUcsc/getExonsFromUcsc.pl -m -k -c -g $g";
         if ($build eq 'GRCh38' or $build eq 'hg38'){
             $cmd .= " -b hg38";
         } 
         $cmd .= " | sed s/chr// " if $build =~ /^GRC/;
         my $output = executeCommand($cmd);
+        if ($non_coding{$r}){
+            print STDERR "Appending exons of non-coding genes for $r genes.\n";
+            my $ncg = join(" ", sort keys(%{$non_coding{$r}}));
+            my $nc_cmd = "perl $RealBin/getExonsFromUcsc/getExonsFromUcsc.pl -m -k -g $ncg";
+            if ($build eq 'GRCh38' or $build eq 'hg38'){
+                $nc_cmd .= " -b hg38";
+            } 
+            my $nc_output = executeCommand($nc_cmd);
+            $output .= $nc_output;
+        }
         my $bed = "bed_files/$r". "_coding_exons_$build.bed";
         $bed =~ s/non-reportable/not_reportable/;
             #legacy reasons - we called the bed files 'not_reportable'
@@ -82,14 +97,13 @@ sub getCodingExons{
 ##################################################
 sub getGenes{
     open (my $GENES, "<", $gene_list) or die "Could not open $gene_list: $!\n";
-    my %symbols;
     my $n = 0;
-    $symbols{reportable} = [];
-    $symbols{"non-reportable"} = [];
+    $genes{reportable} = [];
+    $genes{"non-reportable"} = [];
     while (my $line = <$GENES>){
         $n++;
         chomp $line;
-        my ($s, undef, $r) = split(/\t/, $line);
+        my ($s, undef, $r, undef, $nc) = split(/\t/, $line);
         next if not $s; #empty line?
         $s =~ s/^\s+//;#remove preceding whitespace
         $s =~ s/\W.+$//;#remove trailing crud
@@ -102,12 +116,14 @@ Please edit this file and try again.
 EOT
             ;
         }
-        push @{$symbols{lc$r}}, $s;
+        push @{$genes{lc$r}}, $s;
+        if (defined $nc and lc($nc) eq 'non-coding'){
+            $non_coding{lc$r}->{$s}++;
+        }
     }
-    die "No reportable genes identified from $gene_list!\n" if not @{$symbols{reportable}};
-    print STDERR "Identified ". scalar(@{$symbols{reportable}}) . " reportable genes from $gene_list.\n";
-    print STDERR "Identified ". scalar(@{$symbols{"non-reportable"}}) . " non-reportable genes from $gene_list.\n";
-    return %symbols;
+    die "No reportable genes identified from $gene_list!\n" if not @{$genes{reportable}};
+    print STDERR "Identified ". scalar(@{$genes{reportable}}) . " reportable genes from $gene_list.\n";
+    print STDERR "Identified ". scalar(@{$genes{"non-reportable"}}) . " non-reportable genes from $gene_list.\n";
 }
 
 ##################################################
