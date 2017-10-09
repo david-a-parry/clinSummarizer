@@ -84,7 +84,7 @@ if (defined $opts{n}){#only do CDD search (e.g. if has failed previously)
     retrieveAndOutputCddInfo();
     exit;
 }
-
+my %preferred_transcripts = ();
 if ($opts{l}){
     push @gene_ids, readList();
 }
@@ -1135,7 +1135,11 @@ sub outputTranscriptInfo{
             if (exists $enst_to_uniprot{$t}){
                 $uniprot =  $enst_to_uniprot{$t};
             }
-            
+            my $r = $rank;
+            if (exists $preferred_transcripts{$symbol} 
+                and $preferred_transcripts{$symbol} eq $t){
+                $r = 0;
+            }
             my @values = (
                  $symbol, 
                  $ensg,
@@ -1456,9 +1460,13 @@ sub readList{
     open (my $LIST, $opts{l}); 
     my @ids = (); 
     while (my $line = <$LIST>){
+        next if $line =~ /^#/;
         chomp $line; 
         my @s = split(/\s+/, $line); 
         push @ids, $s[0];
+        if (scalar(@s) > 5){
+            $preferred_transcripts{$s[0]} = $s[5];
+        }
     }
     if (not @ids){
         print STDERR "WARNING: No ids found in file $opts{l}.\n";
