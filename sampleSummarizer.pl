@@ -898,7 +898,10 @@ sub assessVariant{
                 $sheet = "Functional";
             }
         }elsif($gene_conditions{ $csq_to_report->{symbol} }->{non_coding}){
-            $sheet = "Functional";#output all non-coding variants as 'Functional'
+            if ($csq_to_report =~ /exonic/){
+                #report all exonic variants for non-coding labelled genes
+                $sheet = "Functional"; 
+            }
         }
         foreach my $s (keys %sample_genos){
             push @{$sample_vars{$s}->{$sheet}}, [@{$sample_genos{$s}}, @row];
