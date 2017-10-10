@@ -897,6 +897,8 @@ sub assessVariant{
             }else{
                 $sheet = "Functional";
             }
+        }elsif($gene_conditions{ $csq_to_report->{symbol} }->{non_coding}){
+            $sheet = "Functional";#output all non-coding variants as 'Functional'
         }
         foreach my $s (keys %sample_genos){
             push @{$sample_vars{$s}->{$sheet}}, [@{$sample_genos{$s}}, @row];
@@ -1724,6 +1726,11 @@ sub checkGeneInheritanceFile{
         $gene_conditions{$split[0]}->{inheritance} = $split[1];
         $gene_conditions{$split[0]}->{reportable} = $split[2];
         $gene_conditions{$split[0]}->{condition} = $split[3];
+        if (@split >= 5){
+            if ($split[4] eq 'non-coding'){
+                $gene_conditions{$split[0]}->{non_coding} = 1;
+            }
+        }
     }
 }
 ###########################################################
