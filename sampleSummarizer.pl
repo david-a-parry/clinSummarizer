@@ -438,8 +438,24 @@ sub getSampleDepths{
             $depth{$region}->{$k}->{mean} = $mean;
             my $median = median(@values);
             $depth{$region}->{$k}->{median} = $median;
+            my $stdev = stdev(@values);
+            $depth{$region}->{$k}->{stdev} = $stdev;
         }
     }
+}
+
+###########################################################
+sub stdev{
+    if(@_ == 1){
+        return 0;
+    }
+    my $mean = mean(@_);
+    my $sq = 0;
+    foreach my $val (@_) {
+        $sq += ($mean - $val) ** 2;
+    }
+    my $stdev = ($sq / (@_-1)) ** 0.5;
+    return $stdev;
 }
 
 ###########################################################
@@ -544,9 +560,11 @@ sub writeDepthOutput{
         End 
         MeanDepth 
         RunMeanDepth 
+        RunStdevOfTheMeanDepth 
         RunMedianOfTheMeanDepth 
         %Covered_20X
         RunMean%Covered_20X
+        RunStdev%Covered_20X
         RunMedian%Covered_20X
         OtherBedFields
     / ){
@@ -569,9 +587,11 @@ sub writeDepthOutput{
             @bed[0..2], 
             $depth{$line}->{mean}->{$sample}, 
             $depth{$line}->{mean}->{mean}, 
+            $depth{$line}->{mean}->{stdev}, 
             $depth{$line}->{mean}->{median}, 
             $depth{$line}->{pc20}->{$sample}, 
             $depth{$line}->{pc20}->{mean}, 
+            $depth{$line}->{mean}->{stdev}, 
             $depth{$line}->{pc20}->{median}, 
             @other,
         ){
