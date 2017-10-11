@@ -866,6 +866,8 @@ sub assessVariant{
         push @row, @$hgmd; 
         my ($clinvar, $clinvar_path) = addClinvarMatches($min{$al}, $csq_to_report, $most_damaging_csq);
         push @row, @$clinvar;
+        my ($custom, $custom_path) = addCustomMatches($min{$al}, $csq_to_report, $most_damaging_csq);
+        push @row, @$custom;
         
         #output frequency values
         push @row, $dbsnp_freq >= 0 ? $dbsnp_freq : "";
@@ -888,7 +890,7 @@ sub assessVariant{
         my $sheet = "Other";
         if (exists $functional_classes{$most_damaging_csq}){
             if ( $opts{pathogenic} ){
-                if (( $clinvar_path or $hgmd_dm or 
+                if (( $clinvar_path or $hgmd_dm or $custom_path or
                  exists $lof_classes{$most_damaging_csq} 
                  or $csq_to_report->{cdd_feature_residues} ) 
                 ){
@@ -897,6 +899,8 @@ sub assessVariant{
             }else{
                 $sheet = "Functional";
             }
+        }elsif ( $clinvar_path or $hgmd_dm or $custom_path ){
+            $sheet = "Functional";
         }elsif($gene_conditions{ $csq_to_report->{symbol} }->{non_coding}){
             if ($csq_to_report =~ /exonic/){
                 #report all exonic variants for non-coding labelled genes
@@ -1178,7 +1182,63 @@ sub getCddAndUniprotOverlappingFeatures{
     return \@hits;
 }
 
+###########################################################
+sub addCustomMatches{
+    my $var = shift;
+    my $csq = shift;
+    my $most_damaging_csq = shift;
+    my @v_matches = getCustomMatches($var);
+    my $path = 0;
+    my @results = ();
+    if (@v_matches){
+        $path++;
+        my $res = $v_matches[0]->{var_id};
+        foreach my $f ( qw /hgvsc hgvsp /){
+            my $s = join(",", map { $_->{$f} } grep {/\S/} @v_matches );
+            $res .= "|$s" if $s;
+        }
+        push @results, $res;
+    }else{
+        push @results, "-";
+    }
 
+    #get variants with same AA altered
+    my @aa_matches = ();
+    if (exists $search_handles{custompath_aa} and 
+        ( $most_damaging_csq eq 'missense_variant' or 
+          $most_damaging_csq eq 'protein_altering_variant' or 
+          $most_damaging_csq =~  /^inframe_(inser|dele)tion$/ 
+        )
+    ){
+        $search_handles{custompath_aa}->execute
+        (
+            $csq->{feature},
+            $csq->{protein_position},
+        ) or die "Error searching 'CustomPath_VEP' table in '$opts{t}': " . 
+          $search_handles{custompath_aa} -> errstr;
+        while (my @db_row = $search_handles{custompath_aa}->fetchrow_array()) {
+            my ($var_id, $feature, $consequence, $protein_position, $aa, $hgvsc, $hgvsp) = @db_row; 
+            next if ($var_id and grep {$_->{var_id} eq $var_id} @v_matches );
+            my @s_csq = split("&", $consequence); 
+            @s_csq = sort { $so_ranks{$a} <=> $so_ranks{$b} } @s_csq;
+            if ($s_csq[0] ne 'missense_variant' and 
+                $s_csq[0] ne 'protein_altering_variant' and 
+                $s_csq[0] !~  /^inframe_(inser|dele)tion$/
+            ){
+                next;
+            }
+            $path++;
+            my $desc = "same AA altered";
+            if ($aa eq $csq->{amino_acids}){
+                $desc = "same AA change";
+            }
+            push @aa_matches, "$desc:$var_id:$hgvsc:$hgvsp";
+        }
+    }
+    push @results, join("\n", @aa_matches);
+    return \@results, $path;
+}
+ 
 ###########################################################
 sub addHgmdMatches{
     my $var = shift;
@@ -1790,7 +1850,7 @@ sub readTranscriptDatabase{
         }
     }
     my %missing_tables = ();
-    foreach my $t ( qw / HGMD HGMD_VEP ClinVar ClinVar_VEP / ){#non-essential tables
+    foreach my $t ( qw / HGMD HGMD_VEP ClinVar ClinVar_VEP CustomPath CustomPath_VEP/ ){#non-essential tables
         if (not exists $tables{"\"main\".\"$t\""}){
             print STDERR "WARNING: $t table not found in $opts{t} - will skip variant annotations for this table.\n";
             $missing_tables{$t}++;
@@ -1911,6 +1971,41 @@ sub readTranscriptDatabase{
         );
     }
 
+    if (not exists $missing_tables{CustomPath}){
+        $search_handles{custompath_pos} = $dbh->prepare
+        (
+            qq{ select var_id, id
+                FROM CustomPath 
+                WHERE chrom == ? 
+                and pos == ? 
+                and ref == ?
+                and alt == ?
+            }
+        );
+     }
+    
+     if (not exists $missing_tables{CustomPath_VEP}){
+
+        $search_handles{custompath_aa} =  $dbh->prepare
+        (
+            qq{ select var_id, feature, consequence, protein_position, amino_acids, hgvsc, hgvsp
+                 FROM CustomPath_VEP
+                WHERE feature == ? 
+                and protein_position == ? 
+            }
+        );
+        
+        $search_handles{custompath_hgvs} =  $dbh->prepare
+        (
+            qq{ select hgvsc, hgvsp
+                 FROM CustomPath_VEP
+                WHERE var_id == ? 
+            }
+        );
+      }
+
+
+
     if (exists $tables{"\"main\".\"EvolutionaryTrace\""}){
         $search_handles{et} = $dbh->prepare
         (
@@ -1962,6 +2057,31 @@ sub getClinvarMatches{
     }
     return @results;
 }
+
+###########################################################
+sub getCustomMatches{
+    return if not  $search_handles{CustomPath} or not $search_handles{CustomPath_hgvs};
+    my $var = shift;
+    my @results = ();
+    $search_handles{custompath_pos}->execute
+    (
+        $var->{CHROM}, 
+        $var->{POS}, 
+        $var->{REF}, 
+        $var->{ALT}, 
+    ) or die "Error searching 'CustomPath' table in '$opts{t}': " . 
+      $search_handles{custompath_pos} -> errstr;
+    while (my @db_row = $search_handles{custompath_pos}->fetchrow_array()) {
+        my %custompath = (var_id => $db_row[0]);
+        $search_handles{custompath_hgvs}->execute($db_row[0]) 
+          or die "Error searching 'HGMD' table in '$opts{t}': " . 
+          $search_handles{custompath_hgvs} -> errstr;
+        ($custompath{hgvsc}, $custompath{hgvsp}) = $search_handles{custompath_hgvs}->fetchrow_array();
+        push @results, \%custompath;
+    }
+    return @results;
+}
+
 
 ###########################################################
 sub getHgmdMatches{
@@ -2044,6 +2164,8 @@ sub getHeaders{
             ClinVarTrait
             ClinVarConflicted
             ClinVar_similar
+            CustomPath_ID
+            CustomPath_similar
             dbSNP_AF
             dbSNP_ID
             EVS_AF

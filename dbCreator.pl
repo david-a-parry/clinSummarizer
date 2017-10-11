@@ -28,11 +28,13 @@ GetOptions(
     's|species=s',
     'e|et_folder=s',#optional evolutionary trace folder containing protein predictions
     'm|hgmd=s', #optional HGMD VEP annotated VCF for creation of HGMD variant table
-    'c|clinvar=s', #optional ClinVar VEP annotated VCF for creation of ClinVar variant table
-    'a|assembly=s', #optional - specify assembly for HGMD consequences - default = GRCh37
+    'c|clinvar=s', #optional ClinVar VEP annotated VCF (from MacArthur github) for creation of ClinVar variant table
+    'p|path_variants=s', #VEP annotated VCF of variants to consider as pathogenic
+    'a|assembly=s', #optional - specify assembly transcripts and HGMD consequence - default = GRCh37
     'x|error_log=s',#optional log file for printing messages
     'q|quiet',
     'n|domain_search_only:i', #flag to only perform CDD search on a pre-existing database
+    'v|variant_addition_only', #flag to only perform addition of variants from clinvar/hgmd/local file
     'h|?|help',
 ) or usage("Syntax error");
 
@@ -66,6 +68,9 @@ my $dbh = DBI->connect("DBI:$driver:$opts{d}", {RaiseError => 1})
 #set up our query objects
 my $parser = new IdParser();
 my $restQuery = new EnsemblRestQuery();
+if ($opts{a} eq "GRCh37" or $opts{a} eq "hg19"){
+    $restQuery->useGRCh37Server(); 
+}
 my $http = HTTP::Tiny -> new(); 
 
 my %id_mapping = (); #keep track of which genes came from which ID input
@@ -84,6 +89,14 @@ if (defined $opts{n}){#only do CDD search (e.g. if has failed previously)
     retrieveAndOutputCddInfo();
     exit;
 }
+if ($opts{v}){
+    readTranscriptDatabase();
+    outputClinvarInfo();
+    outputHgmdInfo();
+    outputLocalPathInfo();
+    exit;
+}   
+    
 my %preferred_transcripts = ();
 if ($opts{l}){
     push @gene_ids, readList();
@@ -102,6 +115,8 @@ outputTranscriptInfo();
 outputClinvarInfo();
 
 outputHgmdInfo();
+
+outputLocalPathInfo();
 
 outputEvolutionaryTraceInfo();
 
@@ -143,6 +158,135 @@ sub getUniprotIdsFromDatabase{
         }
     }
 }
+
+#########################################################
+sub outputLocalPathInfo{
+    my @get_vep =  qw /
+            symbol
+            gene
+            consequence
+            allele
+            feature
+            hgvsc
+            hgvsp
+            exon
+            intron
+            cdna_position
+            cds_position
+            amino_acids
+            protein_position
+      /;
+    my @csq_fields = qw/
+            var_id
+            symbol
+            feature
+            consequence
+            cdna_position
+            cds_position
+            protein_position
+            amino_acids
+            hgvsc
+            hgvsp
+      /;
+    my @var_fields = qw /
+                var_id
+                assembly           
+                chrom              
+                pos
+                ref                
+                alt                
+                id             
+    /;
+
+ 
+    my %f_to_prop = ( 
+                feature             => "TEXT not null",
+                symbol              => "TEXT",
+                var_id              => "TEXT not null",
+                assembly            => "TEXT not null",
+                chrom               => "TEXT not null",
+                pos                 => "INT not null",
+                ref                 => "TEXT not null",
+                alt                 => "TEXT not null",
+                id                  => "TEXT",
+                consequence         => "TEXT not null",
+                cdna_position       => "int",
+                cds_position        => "int",
+                protein_position    => "int",
+                amino_acids         => "TEXT",
+                hgvsc               => "TEXT",
+                hgvsp               => "TEXT",
+    );
+    informUser("Adding local pathogenic variants data to 'CustomPath' and 'CustomPath_VEP' table of $opts{d}.\n");
+    createTable('CustomPath', \@var_fields, \%f_to_prop);
+    createTable('CustomPath_VEP', \@csq_fields, \%f_to_prop);
+    return if not $opts{p};#if not specified create the empty table and return
+    my $FH = VcfReader::openVcf($opts{p}); 
+    my @vhead = VcfReader::getHeader($opts{p});
+    die "VCF header not OK for $opts{p}\n" if not VcfReader::checkHeader(header => \@vhead);
+    my %vep_fields = VcfReader::readVepHeader(header => \@vhead);
+    my $var_insert_query = getInsertionQuery("CustomPath", \@var_fields); 
+    my $var_select_query = getSelectQuery("CustomPath", \@var_fields); 
+    my $var_insth= $dbh->prepare( $var_insert_query );
+    my $var_selth= $dbh->prepare( $var_select_query );
+    my $csq_insert_query = getInsertionQuery("CustomPath_VEP", \@csq_fields); 
+    my $csq_select_query = getSelectQuery("CustomPath_VEP", \@csq_fields); 
+    my $csq_insth= $dbh->prepare( $csq_insert_query );
+    my $csq_selth= $dbh->prepare( $csq_select_query );
+    $dbh->do('begin');
+    my $n = 0;
+    while (my $l = <$FH>){
+        next if $l =~ /^#/;
+        my @split = split("\t", $l);
+        my $var_id = sprintf("%s:%s-%s/%s", 
+                             VcfReader::getVariantField(\@split, 'CHROM'),
+                             VcfReader::getVariantField(\@split, 'POS'),
+                             VcfReader::getVariantField(\@split, 'REF'),
+                             VcfReader::getVariantField(\@split, 'ALT'));
+        my @vep_csq = VcfReader::getVepFields
+        (
+            line       => \@split,
+            vep_header => \%vep_fields,
+            field      => \@get_vep,
+        );
+        my $transcript_found = 0;
+        foreach my $csq (@vep_csq){ 
+            next if not $csq->{gene};
+            next if not (exists $transcript_ranks{$csq->{gene}});
+            next if not (exists $transcript_ranks{$csq->{gene}}->{$csq->{feature}});
+            if (not $transcript_found){
+                $transcript_found = 1; 
+            }
+            my %fields_for_csq = (var_id => $var_id);
+            foreach my $f (@get_vep){
+                $fields_for_csq{$f} = $csq->{$f};
+            }
+            my @csq_values = map { $fields_for_csq{$_} } @csq_fields;
+            $n += addRow($csq_insth, \@csq_values);
+            if ($n == $max_commit ){
+                $dbh->do('commit');
+                $dbh->do('begin');
+                $n = 0;
+            }
+        }
+        if ($transcript_found){
+            #COLLECT VCF FIELDS (CHROM POS etc)	
+            my %fields_for_var  = (var_id => $var_id, assembly => $opts{a});
+            foreach my $f (qw /chrom pos ref alt id / ){ 
+                $fields_for_var{$f} = VcfReader::getVariantField(\@split, uc($f));
+            }
+            my @var_values = map { $fields_for_var{$_} } @var_fields;
+            $n += addRow($var_insth, \@var_values);
+            if ($n == $max_commit ){
+                $dbh->do('commit');
+                $dbh->do('begin');
+                $n = 0;
+            }
+        }
+    }
+    $dbh->do('commit');
+}
+
 
 #########################################################
 sub outputHgmdInfo{
@@ -779,10 +923,10 @@ sub outputUniprotInfo{
     ( 
         GeneName    => "TEXT",
         UniprotId   => "TEXT",
-        Start		=> "INT not null",
-        End		    => "INT not null",
-        Feature		=> "TEXT not null",
-        Note		=> "TEXT",
+        Start       => "INT not null",
+        End         => "INT not null",
+        Feature     => "TEXT not null",
+        Note        => "TEXT",
         GRCh37Pos   => "TEXT",
         GRCh38Pos   => "TEXT",
     );
@@ -1083,16 +1227,16 @@ sub outputTranscriptInfo{
                     TranscriptRank	
                 /;
     my %f_to_prop = ( 
-                Symbol			    => "TEXT",
-                EnsemblGeneID	    => "TEXT not null",
+                Symbol              => "TEXT",
+                EnsemblGeneID       => "TEXT not null",
                 EnsemblTranscriptID => "TEXT primary key not null",
                 EnsemblProteinID    => "TEXT",
-                RefSeq_mRNA			=> "TEXT",
+                RefSeq_mRNA         => "TEXT",
                 RefSeq_peptide      => "TEXT",
-                CCDS			    => "TEXT",
-                Uniprot			    => "TEXT",
-                TranscriptScore		=> "INT not null",
-                TranscriptRank		=> "INT not null",
+                CCDS                => "TEXT",
+                Uniprot             => "TEXT",
+                TranscriptScore     => "INT not null",
+                TranscriptRank      => "INT not null",
                 );
     createTable('transcripts', \@fields, \%f_to_prop);
     informUser("Adding transcript data retrieved from Ensembl to 'transcripts' table of $opts{d}.\n");
@@ -1162,6 +1306,22 @@ sub outputTranscriptInfo{
     }
     $dbh->do('commit');
 }
+
+#########################################################
+sub readTranscriptDatabase{
+    my %tables = map {$_ => undef} $dbh->tables;
+    if (not exists $tables{"\"main\".\"transcripts\""}){
+        die "ERROR: Could not find transcripts table in $opts{d} - did you use dbCreator.pl to create this database?\n";
+    }
+    my $q = "SELECT EnsemblGeneID, EnsemblTranscriptID, TranscriptRank FROM transcripts";
+    #we could do lazy loading for when we need to rank transcripts
+    #but for current uses this isn't really worth the effort
+    my $all = $dbh->selectall_arrayref($q);
+    foreach my $tr (@$all){
+        $transcript_ranks{$tr->[0]}->{$tr->[1]} = $tr->[2];
+    }
+}
+
 #########################################################
 sub rankTranscriptsAndCrossRef{
      foreach my $ensg (keys %genes){
@@ -1520,6 +1680,10 @@ sub usage{
         Optional VEP annotated ClinVar VCF for creation of ClinVar variant
         table.
 
+    -p --path_variants
+        Optional VEP annotated VCF of a custom set of pathogenic variants
+        fpr creation of CustomPath variant table.
+
     -a --assembly STRING
         Optional, specify assembly for HGMD consequences - default = GRCh37.
 
@@ -1534,6 +1698,10 @@ sub usage{
         
         If you only want to run the final CDD 'hits' search pass '1' after this
         option  (i.e. '-n 1'). 
+
+    -v, --variant_addition_only
+        Flag to only perform addition of variants from HGMD, ClinVar or custom
+        pathogenic gene table.
 
     -q,--quiet
         Do not print messages to STDERR.
