@@ -1199,7 +1199,7 @@ sub addCustomMatches{
         }
         push @results, $res;
     }else{
-        push @results, "-";
+        push @results, "";
     }
 
     #get variants with same AA altered
@@ -1262,7 +1262,7 @@ sub addHgmdMatches{
             push @results, $s;
         }
     }else{
-        push @results, map {"-"} (1..5); 
+        push @results, map {""} (1..5); 
     }
 
     #get variants with same AA altered
@@ -1330,7 +1330,7 @@ sub addClinvarMatches{
             push @results, $s;
         }
     }else{
-        push @results, map {"-"} (1..4); 
+        push @results, map {""} (1..4); 
     }
 
     #get variants with same AA altered
