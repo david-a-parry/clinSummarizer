@@ -137,6 +137,7 @@ sub getCodingExons{
             if ($opts{b} eq 'GRCh38' or $opts{b} eq 'hg38'){
                 $nc_cmd .= " -b hg38";
             } 
+            $nc_cmd .= " | sed s/chr// " if $opts{b} =~ /^GRC/;
             my $nc_output = executeCommand($nc_cmd);
             $output .= $nc_output;
         }
