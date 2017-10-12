@@ -1786,6 +1786,8 @@ sub checkGeneInheritanceFile{
         chomp $line;
         next if not $line;
         my @split = split("\t", $line); 
+	$split[0] =~ s/^\s+//;
+	$split[0] =~ s/\s+.*$//;
         $gene_conditions{$split[0]}->{inheritance} = $split[1];
         $gene_conditions{$split[0]}->{reportable} = $split[2];
         $gene_conditions{$split[0]}->{condition} = $split[3];
