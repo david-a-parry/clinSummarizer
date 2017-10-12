@@ -71,7 +71,7 @@ sub getGeneRegions{
     foreach my $r (qw /reportable non-reportable/){
         next if not @{$genes{$r}};
         print STDERR "Retrieving genomic regions for $r genes.\n";
-        my $cmd = "perl $RealBin/genomeUtils/coordinatesFromGenes.pl -j -g ". 
+        my $cmd = "perl $RealBin/genomeUtils/coordinatesFromGenes.pl -f 500 -j -g ". 
                   join(" ", @{$genes{$r}});
         if ($opts{b} eq 'hg19' or $opts{b} eq 'GRCh37'){
             $cmd .= ' -r ';
@@ -101,7 +101,7 @@ sub getGeneRegionsUcsc{
             $cmd .= " -b hg38";
         } 
         if ($opts{b} =~ /^GRC/){
-            $cmd .= " | grep -vP '^chr\w+_' | sed s/chr// ";
+            $cmd .= " | grep -vP '^chr\\w+_' | sed s/chr// ";
         }
         my $output = executeCommand($cmd);
         my $bed = "bed_files/$r". "_genes_$opts{b}.bed";
