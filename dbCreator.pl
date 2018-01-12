@@ -19,7 +19,8 @@ use EnsemblRestQuery;
 use VcfReader;
 
 my @gene_ids = ();
-my %opts = ( i => \@gene_ids);
+my @clinvar_vcfs = ();
+my %opts = ( i => \@gene_ids, c => \@clinvar_vcfs);
 GetOptions(
     \%opts,
     'l|list=s',
@@ -28,7 +29,7 @@ GetOptions(
     's|species=s',
     'e|et_folder=s',#optional evolutionary trace folder containing protein predictions
     'm|hgmd=s', #optional HGMD VEP annotated VCF for creation of HGMD variant table
-    'c|clinvar=s', #optional ClinVar VEP annotated VCF (from MacArthur github) for creation of ClinVar variant table
+    'c|clinvar=s{,}', #optional ClinVar VEP annotated VCF (from MacArthur github) for creation of ClinVar variant table
     'p|path_variants=s', #VEP annotated VCF of variants to consider as pathogenic
     'a|assembly=s', #optional - specify assembly transcripts and HGMD consequence - default = GRCh37
     'x|error_log=s',#optional log file for printing messages
@@ -68,9 +69,9 @@ my $dbh = DBI->connect("DBI:$driver:$opts{d}", {RaiseError => 1})
 #set up our query objects
 my $parser = new IdParser();
 my $restQuery = new EnsemblRestQuery();
-if ($opts{a} eq "GRCh37" or $opts{a} eq "hg19"){
-    $restQuery->useGRCh37Server(); 
-}
+#if ($opts{a} eq "GRCh37" or $opts{a} eq "hg19"){
+#    $restQuery->useGRCh37Server(); 
+#}
 my $http = HTTP::Tiny -> new(); 
 
 my %id_mapping = (); #keep track of which genes came from which ID input
@@ -446,17 +447,20 @@ sub outputHgmdInfo{
 #########################################################
 sub outputClinvarInfo{
     my @clinvar_fields =  qw /
-                measureset_id
+                variation_id
                 symbol
                 clinical_significance
+                pathogenic
+                likely_pathogenic
+                uncertain_significance
+                likely_benign
+                benign
                 review_status
                 hgvs_c
                 hgvs_p
                 all_submitters
                 all_traits
                 all_pmids
-                pathogenic
-                conflicted
     /;
    
     my @get_vep =  qw /
@@ -479,7 +483,7 @@ sub outputClinvarInfo{
             lof_flags
       /;
     my @clin_fields = qw / 
-                measureset_id
+                variation_id
                 symbol
                 clinical_significance
                 review_status
@@ -489,7 +493,10 @@ sub outputClinvarInfo{
                 all_traits
                 all_pmids
                 pathogenic
-                conflicted
+                likely_pathogenic
+                uncertain_significance
+                likely_benign
+                benign
                 assembly
                 chrom              
                 pos
@@ -498,7 +505,7 @@ sub outputClinvarInfo{
     /;
     my @csq_fields = qw /
                 feature
-                measureset_id
+                variation_id
                 consequence 
                 cdna_position
                 cds_position
@@ -513,7 +520,7 @@ sub outputClinvarInfo{
     /;
     my %f_to_prop = ( 
                 feature               => "TEXT not null",
-                measureset_id         => "TEXT not null",
+                variation_id         => "TEXT not null",
                 symbol                => "TEXT",
                 clinical_significance => "TEXT", 
                 review_status         => "TEXT",
@@ -523,7 +530,10 @@ sub outputClinvarInfo{
                 all_traits            => "TEXT",
                 all_pmids             => "TEXT",
                 pathogenic            => "INT not null",
-                conflicted            => "INT not null", 
+                likely_pathogenic     => "INT not null",
+                uncertain_significance=> "INT not null",
+                likely_benign         => "INT not null",
+                benign                => "INT not null",
                 assembly              => "TEXT not null",
                 chrom                 => "TEXT not null",
                 pos                   => "INT not null",
@@ -543,11 +553,7 @@ sub outputClinvarInfo{
     );
     informUser("Adding local ClinVar data to 'ClinVar' and 'ClinVar_VEP' tables of $opts{d}.\n");
     createTable('ClinVar', \@clin_fields, \%f_to_prop);
-    return if not $opts{c};
-    my $FH = VcfReader::openVcf($opts{c}); 
-    my @vhead = VcfReader::getHeader($opts{c});
-    die "VCF header not OK for $opts{m}\n" if not VcfReader::checkHeader(header => \@vhead);
-    my %vep_fields = VcfReader::readVepHeader(header => \@vhead);
+    return if not @clinvar_vcfs;
     my $clin_insert_query = getInsertionQuery("ClinVar", \@clin_fields); 
     my $clin_select_query = getSelectQuery("ClinVar", \@clin_fields); 
     my $clin_insth= $dbh->prepare( $clin_insert_query );
@@ -560,63 +566,69 @@ sub outputClinvarInfo{
     my $csq_selth= $dbh->prepare( $csq_select_query );
     $dbh->do('begin');
     my $n = 0;
-    while (my $l = <$FH>){
-        next if $l =~ /^#/;
-        my %var_fields = (assembly => $opts{a}); 
-        my @split = split("\t", $l);
-        my @vep_csq = VcfReader::getVepFields
-        (
-            line       => \@split,
-            vep_header => \%vep_fields,
-            field      => \@get_vep,
-        );
-        #we shouldn't have multiallelic sites in our ClinVar VCF (right?)
-        # - so no need to check alleles in VEP CSQ
-        my $transcript_found = 0;
-        foreach my $csq (@vep_csq){ 
-            next if not $csq->{gene};
-            next if not (exists $transcript_ranks{$csq->{gene}});
-            next if not (exists $transcript_ranks{$csq->{gene}}->{$csq->{feature}});
-            #only collect INFO fields if we haven't already
-            if (not $transcript_found){
-                #GET ClinVar ANNOTATIONS FROM INFO FIELD
-                foreach my $f (@clinvar_fields){
-                    $var_fields{$f} = VcfReader::getVariantInfoField(\@split, $f);
-                    #some versions used uppercase info fields, others lowercase...
-                    if (not $var_fields{$f}){
-                        $var_fields{$f} = VcfReader::getVariantInfoField(\@split, uc($f));
-                    }
-                } 
-                $transcript_found = 1;
+    foreach my $cvcf (@clinvar_vcfs){
+        my $FH = VcfReader::openVcf($cvcf); 
+        my @vhead = VcfReader::getHeader($cvcf);
+        die "VCF header not OK for $cvcf\n" if not VcfReader::checkHeader(header => \@vhead);
+        my %vep_fields = VcfReader::readVepHeader(header => \@vhead);
+        while (my $l = <$FH>){
+            next if $l =~ /^#/;
+            my %var_fields = (assembly => $opts{a}); 
+            my @split = split("\t", $l);
+            my @vep_csq = VcfReader::getVepFields
+            (
+                line       => \@split,
+                vep_header => \%vep_fields,
+                field      => \@get_vep,
+            );
+            #we shouldn't have multiallelic sites in our ClinVar VCF (right?)
+            # - so no need to check alleles in VEP CSQ
+            my $transcript_found = 0;
+            foreach my $csq (@vep_csq){ 
+                next if not $csq->{gene};
+                next if not (exists $transcript_ranks{$csq->{gene}});
+                next if not (exists $transcript_ranks{$csq->{gene}}->{$csq->{feature}});
+                #only collect INFO fields if we haven't already
+                if (not $transcript_found){
+                    #GET ClinVar ANNOTATIONS FROM INFO FIELD
+                    foreach my $f (@clinvar_fields){
+                        $var_fields{$f} = VcfReader::getVariantInfoField(\@split, $f);
+                        #some versions used uppercase info fields, others lowercase...
+                        if (not $var_fields{$f}){
+                            $var_fields{$f} = VcfReader::getVariantInfoField(\@split, uc($f));
+                        }
+                    } 
+                    $transcript_found = 1;
+                }
+                my %fields_for_csq = (variation_id => $var_fields{variation_id});
+                foreach my $f (@get_vep){
+                    $fields_for_csq{$f} = $csq->{$f};
+                }
+                my @csq_values = map { $fields_for_csq{$_} } @csq_fields;
+                $n += addRow($csq_insth, \@csq_values);
+                if ($n == $max_commit ){
+                    $dbh->do('commit');
+                    $dbh->do('begin');
+                    $n = 0;
+                }
             }
-            my %fields_for_csq = (measureset_id => $var_fields{measureset_id});
-            foreach my $f (@get_vep){
-                $fields_for_csq{$f} = $csq->{$f};
-            }
-            my @csq_values = map { $fields_for_csq{$_} } @csq_fields;
-            $n += addRow($csq_insth, \@csq_values);
-            if ($n == $max_commit ){
-                $dbh->do('commit');
-                $dbh->do('begin');
-                $n = 0;
+            if ($transcript_found){
+                #COLLECT VCF FIELDS (CHROM POS etc)
+                foreach my $f (qw /chrom pos ref alt / ){ 
+                    $var_fields{$f} =  VcfReader::getVariantField(\@split, uc($f));
+                }
+                my @clin_values = map { $var_fields{$_} } @clin_fields;
+                $n += addRow($clin_insth, \@clin_values);
+                if ($n == $max_commit ){
+                    $dbh->do('commit');
+                    $dbh->do('begin');
+                    $n = 0;
+                }
+           
             }
         }
-        if ($transcript_found){
-            #COLLECT VCF FIELDS (CHROM POS etc)
-            foreach my $f (qw /chrom pos ref alt / ){ 
-                $var_fields{$f} =  VcfReader::getVariantField(\@split, uc($f));
-            }
-            my @clin_values = map { $var_fields{$_} } @clin_fields;
-            $n += addRow($clin_insth, \@clin_values);
-            if ($n == $max_commit ){
-                $dbh->do('commit');
-                $dbh->do('begin');
-                $n = 0;
-            }
-       
-        }
+        $dbh->do('commit') if $n;
     }
-    $dbh->do('commit');
 }
 
 #########################################################
@@ -651,7 +663,7 @@ sub getSelectQuery{
 #########################################################
 sub addRow{
     my ($insth, $vals, $selth, ) = @_;
-    my @multi_vals = map {($_, defined($_) ? 0 : 1) } @$vals;
+    #my @multi_vals = map {($_, defined($_) ? 0 : 1) } @$vals;
     if ($selth){
         $selth->execute(@$vals) or die "Could not execute duplicate check query: " 
        # $selth->execute(@multi_vals) or die "Could not execute duplicate check query: " 
@@ -661,8 +673,13 @@ sub addRow{
             return 0;
         }
     }
-    my $n = $insth->execute(@$vals) or die "Could not insert values: " . $insth->errstr;
-    return $n;
+    if (my $n = $insth->execute(@$vals)){# or die "Could not insert values: " . $insth->errstr;
+        return $n;
+    }else{
+        warn "Error inserting values for ". join(",", @$vals) . ".\n".
+             "ERROR: ".$insth->errstr."\n";
+        return 0;
+    }
 }
 
 #########################################################
@@ -688,15 +705,17 @@ sub parseCddFeats{
             my @coords = sort { $a <=> $b } 
                          map { s/^[A-Z]+//g; $_ } 
                          split(/[\,\-]/, $s[3]);
-            my ($grch37_pos, $grch38_pos ) = ("", "");
-            if ( $uniprot_to_ensp{$u} and ref $uniprot_to_ensp{$u} eq 'ARRAY'){
-                ($grch37_pos, $grch38_pos ) = genomicPosFromEnsp
-                (
-                    ids   => $uniprot_to_ensp{$u},
-                    start => $coords[0],
-                    end   => $coords[-1],
-                );
-            } 
+            # commenting out code below retrieving genomic coordinates from 
+            # protein positions as we do not use this downstream at the moment
+#            my ($grch37_pos, $grch38_pos ) = ("", "");
+#            if ( $uniprot_to_ensp{$u} and ref $uniprot_to_ensp{$u} eq 'ARRAY'){
+#                ($grch37_pos, $grch38_pos ) = genomicPosFromEnsp
+#                (
+#                    ids   => $uniprot_to_ensp{$u},
+#                    start => $coords[0],
+#                    end   => $coords[-1],
+#                );
+#            } 
             my @values = (
                 $u,
                 $name, 
@@ -705,8 +724,8 @@ sub parseCddFeats{
                 $s[3],
                 $coords[0],
                 $coords[-1],
-                $grch37_pos, 
-                $grch38_pos, 
+                #$grch37_pos, 
+                #$grch38_pos, 
             ) ;
             $n += addRow($insth, \@values, $selth);
             if ($n == $max_commit ){
@@ -741,15 +760,17 @@ sub parseCddHits{
         if ($s[0] =~ /Q\#\d+ - (\S+)/){
             my $u = $1;
             my $name = $uniprot_to_genename{$u};
-            my ($grch37_pos, $grch38_pos ) = ("", "");
-            if ( $uniprot_to_ensp{$u} and ref $uniprot_to_ensp{$u} eq 'ARRAY'){
-                ($grch37_pos, $grch38_pos ) = genomicPosFromEnsp
-                (
-                    ids   => $uniprot_to_ensp{$u},
-                    start => $s[3],
-                    end   => $s[4],
-                ); 
-            }
+            # commenting out code below retrieving genomic coordinates from 
+            # protein positions as we do not use this downstream at the moment
+#            my ($grch37_pos, $grch38_pos ) = ("", "");
+#            if ( $uniprot_to_ensp{$u} and ref $uniprot_to_ensp{$u} eq 'ARRAY'){
+#                ($grch37_pos, $grch38_pos ) = genomicPosFromEnsp
+#                (
+#                    ids   => $uniprot_to_ensp{$u},
+#                    start => $s[3],
+#                    end   => $s[4],
+#                ); 
+#            }
             my @values = (
                 $u,
                 $name, 
@@ -758,8 +779,8 @@ sub parseCddHits{
                 undef,
                 $s[3],
                 $s[4],
-                $grch37_pos, 
-                $grch38_pos, 
+                #$grch37_pos, 
+                #$grch38_pos, 
             ) ;
             $n += addRow($insth, \@values, $selth);
             if ($n == $max_commit ){
@@ -784,9 +805,10 @@ sub retrieveAndOutputCddInfo{
                  Residues 
                  Start 
                  End
-                 GRCh37Pos   
-                 GRCh38Pos  
                  /; 
+                 #GRCh37Pos   
+                 #GRCh38Pos  
+                 #/; 
     my %f_to_prop = ( 
                  UniprotId   => "TEXT not null",  
                  symbol      => "TEXT",
@@ -795,8 +817,8 @@ sub retrieveAndOutputCddInfo{
                  Residues    => "TEXT",
                  Start       => "INT not null",
                  End         => "INT not null",
-                 GRCh37Pos   => "TEXT",
-                 GRCh38Pos   => "TEXT",
+                 #GRCh37Pos   => "TEXT",
+                 #GRCh38Pos   => "TEXT",
                  );
     createTable('cdd', \@fields, \%f_to_prop);
     unless (defined $opts{n} and $opts{n} == 1){
@@ -916,9 +938,10 @@ sub outputUniprotInfo{
                 End
                 Feature
                 Note
-                GRCh37Pos
-                GRCh38Pos
                 /; 
+                #GRCh37Pos
+                #GRCh38Pos
+                #/; 
     my %f_to_prop = 
     ( 
         GeneName    => "TEXT",
@@ -927,8 +950,8 @@ sub outputUniprotInfo{
         End         => "INT not null",
         Feature     => "TEXT not null",
         Note        => "TEXT",
-        GRCh37Pos   => "TEXT",
-        GRCh38Pos   => "TEXT",
+        #GRCh37Pos   => "TEXT",
+        #GRCh38Pos   => "TEXT",
     );
     createTable('uniprot', \@fields, \%f_to_prop);
     my @lol = ();
@@ -945,15 +968,17 @@ sub outputUniprotInfo{
             my ($start, $end) = split('-', $k);
             foreach my $f (@{$uniprot_info{$id}->{$k}}){
                 my ($feature, $note) = split(/\|/, $f );
-                my ($grch37_pos, $grch38_pos ) = ("", "");
-                if ($uniprot_to_ensp{$id} and ref $uniprot_to_ensp{$id} eq 'ARRAY'){
-                    ($grch37_pos, $grch38_pos ) = genomicPosFromEnsp
-                    (
-                        ids   => $uniprot_to_ensp{$id},
-                        start => $start,
-                        end   => $end,
-                    ); 
-                }
+                # commenting out code below retrieving genomic coordinates from 
+                # protein positions as we do not use this downstream at the moment
+#                my ($grch37_pos, $grch38_pos ) = ("", "");
+#                if ($uniprot_to_ensp{$id} and ref $uniprot_to_ensp{$id} eq 'ARRAY'){
+#                    ($grch37_pos, $grch38_pos ) = genomicPosFromEnsp
+#                    (
+#                        ids   => $uniprot_to_ensp{$id},
+#                        start => $start,
+#                        end   => $end,
+#                    ); 
+#                }
                 my @values = 
                 (
                     $name,
@@ -962,8 +987,8 @@ sub outputUniprotInfo{
                     $end,
                     $feature,
                     $note,
-                    $grch37_pos,
-                    $grch38_pos,
+                    #$grch37_pos,
+                    #$grch38_pos,
                 );
                 $n += addRow($insth, \@values, $selth);
                 if ($n == $max_commit ){
@@ -1676,9 +1701,10 @@ sub usage{
     -m --hgmd FILE
         Optional VEP annotated HGMD VCF for creation of HGMD variant table.
 
-    -c --clinvar FILE
-        Optional VEP annotated ClinVar VCF for creation of ClinVar variant
-        table.
+    -c --clinvar FILE [FILE ...]
+        Optional VEP annotated ClinVar VCF(s) for creation of ClinVar variant
+        table. These VCFs should be downloaded from the MacArthur lab github
+        (https://github.com/macarthur-lab/clinvar.git) and annotated with VEP.
 
     -p --path_variants
         Optional VEP annotated VCF of a custom set of pathogenic variants
