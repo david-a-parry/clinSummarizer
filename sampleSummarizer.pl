@@ -34,12 +34,14 @@ my $progressbar;
 my @allele_balance = ();
 my @coverage_dirs  = ();
 my @samples_to_analyze = (); 
+my @controls = ();
 my %opts = 
 (
     b => \@allele_balance,
     f => 0,
     c => \@coverage_dirs,
     samples => \@samples_to_analyze,
+    controls => \@controls,
     cadd_cutoff => 0,
 );
 GetOptions(
@@ -48,6 +50,7 @@ GetOptions(
     'b|allele_balance=f{,}',      #min and optional max alt allele ratio per sample call
     'c|coverage=s{,}',            #directories with depth of GATK coverage data for each sample
     'cadd_cutoff=f',
+    'controls=s{,}',
     'd|depth=i',                  #optional min depth for sample call
     'e|evs=s',                    #evs VCF (concatanated)
     'f|allele_frequency=f',       #allele frequency cutoff for dbsnp, evs, exac
@@ -128,19 +131,26 @@ my %info_fields = VcfReader::getInfoFields
     header => $header
 );
 
+foreach my $s (@controls){
+    if (not exists $samples_to_columns{$s}){
+        die "ERROR: User-specified control '$s' does not exist in VCF!\n";
+    }
+}
 if (@samples_to_analyze){
     foreach my $s (@samples_to_analyze){
         if (not exists $samples_to_columns{$s}){
             die "ERROR: User-specified sample '$s' does not exist in VCF!\n";
         }
+        if (grep {$s eq $_} @controls){
+            die "ERROR: Sample '$s' specified both as a control and sample to analyze!\n";
+        }
     }
 }else{
-    @samples_to_analyze = sort 
-    {
-        $samples_to_columns{$a} <=> $samples_to_columns{$b} 
-    } keys %samples_to_columns;
+    my %tmp_samp = %samples_to_columns;
+    delete @tmp_samp{@controls};#remove samples specified as controls
+    @samples_to_analyze = sort{$tmp_samp{$a} <=> $tmp_samp{$b}} keys %tmp_samp;
+    die "No samples to analyze!\n" if not @samples_to_analyze;
 }
-
 #store variants per sample in this hash for writing sample sheet
 my %sample_vars = (); 
 
@@ -820,6 +830,12 @@ sub assessVariant{
         }
         #get hash of sample names to array of sample genotype fields
         my %sample_genos = getSamplesWithAllele(\@split, $min{$al});
+        my %control_genos = ();
+        if (@controls){
+            %control_genos = map  {$_ => $sample_genos{$_}} 
+                             grep {exists $sample_genos{$_}} @controls;
+            delete @sample_genos{@controls};
+        }
         next if not keys %sample_genos;#no sample with valid genotype
 
         #get relevant consequence to report
@@ -886,6 +902,19 @@ sub assessVariant{
         push @row, $an;
         push @row, $af[$al-1];
         push @row, $ac[$al-1];
+        my $alt = $min{$al}->{ORIGINAL_ALT}; #for readability
+        if (@controls){
+            my $con_count = 0;
+            my $hom_count = 0;
+            map{ my $c = $control_genos{$_}->[1] =~ /^$alt[\/\|]$alt$/ ? 2 : 1;
+                 $con_count += $c;
+                 $hom_count++ if $c == 2;} keys %control_genos;
+            my $con_freq = 0.0;
+            if (keys %control_genos){
+                $con_freq = $con_count/scalar(keys %control_genos);
+            }
+            push @row, $con_count, $con_freq, $hom_count;
+        }
         #record these details against each sample with variant
         my $sheet = "Other";
         if (exists $functional_classes{$most_damaging_csq}){
@@ -912,7 +941,6 @@ sub assessVariant{
             if ($opts{u} and $sheet eq "Functional"){#collect sample variants for inheritance analysis
                 if ($cadd_score eq '.' or $cadd_score >= $opts{cadd_cutoff}){
                     my $h = 1;
-                    my $alt = $min{$al}->{ORIGINAL_ALT};
                     $h = 2 if $sample_genos{$s}->[1]  =~  /^$alt[\/\|]$alt$/;
                     push @{$genes_per_sample{$s}->{$csq_to_report->{symbol}}}, 
                     {
@@ -954,7 +982,7 @@ sub getSamplesWithAllele{
         );
 
     my %samp_ads = (); 
-    foreach my $s (@samples_to_analyze){
+    foreach my $s (@samples_to_analyze, @controls){
         my @ads = VcfReader::getSampleAlleleDepths 
          (
               line => $l,
@@ -963,7 +991,7 @@ sub getSamplesWithAllele{
         );
         $samp_ads{$s} = \@ads;
     }    
-    foreach my $s (@samples_to_analyze){
+    foreach my $s (@samples_to_analyze, @controls){
         my @alts = split(/[\/\|]/, $samp_gts{$s});
         if (grep { $_ eq $var->{ORIGINAL_ALT} } @alts ){ 
             my @ads = @{$samp_ads{$s}}; 
@@ -1127,8 +1155,8 @@ sub getCddAndUniprotOverlappingFeatures{
             end     => $row[3],
             feature => $row[4],
             note    => $row[5],
-            grch37pos => $row[6],
-            grch38pos => $row[7],
+            #grch37pos => $row[6],
+            #grch38pos => $row[7],
         }; 
         push @hits, $hash;
     }
@@ -1153,8 +1181,8 @@ sub getCddAndUniprotOverlappingFeatures{
             residues  => $row[4],#residues are only present in 'Feature' types, not 'Hit'
             start     => $row[5],
             end       => $row[6],
-            grch37pos => $row[7],
-            grch38pos => $row[8],
+            #grch37pos => $row[7],
+            #grch38pos => $row[8],
         }; 
         push @hits, $hash;
     }
@@ -1317,20 +1345,19 @@ sub addClinvarMatches{
     my @results = ();
     my $path = 0;
     if (@c_matches){
-        $path++ if ( grep { $_->{clinical_significance} =~ /Pathogenic/ } @c_matches);
+        map { $path += $_->{pathogenic} + $_->{likely_pathogenic} } @c_matches;
         foreach my $f 
         ( qw /
-                measureset_id
+                variation_id
                 clinical_significance 
                 all_traits 
-                conflicted 
             /
         ){#add ClinVar results to row, multiple values per field separated by commas
             my $s = join(",", map { $_->{$f} } @c_matches );
             push @results, $s;
         }
     }else{
-        push @results, map {""} (1..4); 
+        push @results, map {""} (1..3); 
     }
 
     #get variants with same AA altered
@@ -1350,7 +1377,7 @@ sub addClinvarMatches{
           $search_handles{clinvar_aa} -> errstr;
         while (my @db_row = $search_handles{clinvar_aa}->fetchrow_array()) {
             my ($clinvar_id, $feature, $consequence, $protein_position, $aa, $hgvsc, $hgvsp) = @db_row; 
-            next if (grep {$_->{measureset_id} eq $clinvar_id} @c_matches );
+            next if (grep {$_->{variation_id} eq $clinvar_id} @c_matches );
             my @s_csq = split("&", $consequence); 
             @s_csq = sort { $so_ranks{$a} <=> $so_ranks{$b} } @s_csq;
             if ($s_csq[0] ne 'missense_variant' and 
@@ -1366,11 +1393,11 @@ sub addClinvarMatches{
             $search_handles{clinvar_id}->execute($clinvar_id) 
               or die "Error searching 'ClinVar' table in '$opts{t}': " . 
               $search_handles{clinvar_id} -> errstr;
-            while (my ($path, $clinsig, $conflicted, $disease) = 
+            while (my ($path, $lpath, $clinsig, $disease) = 
                     $search_handles{clinvar_id}->fetchrow_array()
             ) {
                 push @aa_matches,  "$desc:ClinVar_$clinvar_id:$clinsig:$disease:$hgvsc:$hgvsp";
-                $path++ if $clinsig =~ /Pathogenic/; 
+                $path += $path + $lpath; 
             }
         }
     }
@@ -1934,8 +1961,8 @@ sub readTranscriptDatabase{
      if (not exists $missing_tables{ClinVar}){
         $search_handles{clinvar_pos} =  $dbh->prepare
         (
-            qq{ select measureset_id, pathogenic, 
-                clinical_significance, all_traits, conflicted 
+            qq{ select variation_id, pathogenic, likely_pathogenic,
+                clinical_significance, all_traits 
                 FROM ClinVar
                 WHERE chrom == ? 
                 and pos == ? 
@@ -1946,9 +1973,10 @@ sub readTranscriptDatabase{
 
         $search_handles{clinvar_id} =  $dbh->prepare
         (
-            qq{ select pathogenic, clinical_significance, conflicted, all_traits 
+            qq{ select pathogenic, likely_pathogenic, clinical_significance, 
+                all_traits 
                 FROM ClinVar
-                WHERE measureset_id == ? 
+                WHERE variation_id == ? 
             }
         );
       }
@@ -1956,7 +1984,7 @@ sub readTranscriptDatabase{
      if (not exists $missing_tables{ClinVar_VEP}){
         $search_handles{clinvar_aa} =  $dbh->prepare
         (
-            qq{ select measureset_id, feature, consequence, protein_position, amino_acids, hgvsc, hgvsp
+            qq{ select variation_id, feature, consequence, protein_position, amino_acids, hgvsc, hgvsp
                 FROM ClinVar_VEP
                 WHERE feature == ? 
                 and protein_position == ? 
@@ -1968,7 +1996,7 @@ sub readTranscriptDatabase{
         (
             qq{ select hgvsc, hgvsp
                 FROM ClinVar_VEP
-                WHERE measureset_id == ? 
+                WHERE variation_id == ? 
             }
         );
     }
@@ -2030,11 +2058,11 @@ sub getClinvarMatches{
     my @results = ();
     my @clinvar_fields = 
     ( qw /
-            measureset_id
+            variation_id
             pathogenic
+            likely_pathogenic
             clinical_significance 
             all_traits 
-            conflicted 
         /
     );
     $search_handles{clinvar_pos}->execute
@@ -2087,7 +2115,7 @@ sub getCustomMatches{
 
 ###########################################################
 sub getHgmdMatches{
-    return if not  $search_handles{HGMD} or not $search_handles{hgmd_hgvs};
+    return if not  $search_handles{hgmd_pos} or not $search_handles{hgmd_hgvs};
     my $var = shift;
     my @results = ();
     my @hgmd_fields = 
@@ -2164,7 +2192,6 @@ sub getHeaders{
             ClinVar_ID
             ClinVarSig
             ClinVarTrait
-            ClinVarConflicted
             ClinVar_similar
             CustomPath_ID
             CustomPath_similar
@@ -2185,9 +2212,10 @@ sub getHeaders{
             AN
         /
     );
-
+    push @{$h{Variants}}, qw/ Control_AC Control_AF Hom_Controls/ if @controls;
     return %h;
 }
+
 #################################################
 sub informUser{
     my $msg = shift;
@@ -2321,6 +2349,11 @@ looking for heterozygous changes, for example). Valid values between 0.00 and
 =item B<--samples>
 
 Only analyze the samples listed here. 
+
+=item B<--controls>
+
+Treat the following samples as controls and report the count, frequency and 
+homozygous occurences of these samples in the output.
 
 =item B<-u    --summary>
 
