@@ -38,7 +38,8 @@ my @controls = ();
 my %opts = 
 (
     b => \@allele_balance,
-    f => 0,
+    f => undef,
+    control_freq => undef,
     c => \@coverage_dirs,
     samples => \@samples_to_analyze,
     controls => \@controls,
@@ -50,6 +51,7 @@ GetOptions(
     'b|allele_balance=f{,}',      #min and optional max alt allele ratio per sample call
     'c|coverage=s{,}',            #directories with depth of GATK coverage data for each sample
     'cadd_cutoff=f',
+    'control_freq=f',
     'controls=s{,}',
     'd|depth=i',                  #optional min depth for sample call
     'e|evs=s',                    #evs VCF (concatanated)
@@ -70,6 +72,7 @@ GetOptions(
     't|transcript_database=s',    #sqlite database of transcripts and protein info 
     'u|summary=s',                #summary file giving likely causative variants for samples
     'x|exac=s',                   #exac vcf
+    'y|gnomad=s',                 #gnomAD vcf
     'z|cadd_dir=s',               #directory containing tabix indexed CADD scores
 ) or pod2usage(-exitval => 2, -message => "Syntax error.\n"); 
 
@@ -78,7 +81,7 @@ pod2usage( -verbose => 2 ) if $opts{manual};
 pod2usage( -exitval => 2, -message => "-i/--input is required" ) if (not $opts{i});
 pod2usage( -exitval => 2, -message => "-t/--transcript_database is required" ) if (not $opts{t});
 
-my $min_gq = defined $opts{g} ? 0 : $opts{g}; #default min GQ of 0
+my $min_gq = defined $opts{g} ? $opts{g} : 0; #default min GQ of 0
 my %functional_classes = map {$_ => undef} 
 qw /
     TFBS_ablation
@@ -208,6 +211,7 @@ readTranscriptDatabase();
 my %snp_search_args  = readDbSnpFile();
 my %evs_search_args  = readEvsFile();
 my %exac_search_args = readExacFile();
+my %gnomad_search_args = readGnomADFile();
 
 #create output directory if required
 if ($opts{o}){
@@ -819,39 +823,85 @@ sub assessVariant{
     );
     my %alt_to_vep = ();
     @alt_to_vep{@alts} = @vep_alts;
-    
+    my %genos = ();
+    my %gqs = (); 
+    my %pls = ();
+    my %ads = ();
+    my $control_calls = 0; #N genotypes called in controls above $min_gq
     #process alleles one at a time
-    foreach my $al (sort {$a<=>$b} keys %min){
+ALLELE: foreach my $al (sort {$a<=>$b} keys %min){
         my @row = ();#array of values for output to spreadsheet row
         #skip missing alleles
         next if ($min{$al}->{ORIGINAL_ALT} eq '*');
         if ($opts{a}){#filter on AF field in VCF
-            next if $af[$al-1] >= $opts{a};
+            next ALLELE if $af[$al-1] >= $opts{a};
+        }
+        my %sample_genos = ();
+        my %control_genos = ();
+        if (not %genos){
+            %genos = VcfReader::getSampleActualGenotypes
+            (
+                line => \@split, 
+                all => 1,
+                sample_to_columns => \%samples_to_columns,
+                minGQ => $min_gq,
+            );
+            %gqs = VcfReader::getSampleGenotypeField
+            (
+              line => \@split, 
+              field => "GQ",
+              all => 1,
+              sample_to_columns => \%samples_to_columns,
+            );
+            if ($opts{pl}){
+                %pls = VcfReader::getSampleGenotypeField
+                (
+                  line => \@split, 
+                  field => "PL",
+                  all => 1,
+                  sample_to_columns => \%samples_to_columns,
+                );
+            }
+            foreach my $s (@samples_to_analyze, @controls){
+                my @al_dp = VcfReader::getSampleAlleleDepths 
+                 (
+                      line => \@split, 
+                      sample => $s,
+                      sample_to_columns => \%samples_to_columns,
+                );
+                $ads{$s} = \@al_dp;
+            }
+            @sample_genos{@samples_to_analyze} = @genos{@samples_to_analyze};
+            @control_genos{@controls} = @genos{@controls};
+            $control_calls = scalar grep {$control_genos{$_} ne '-/-'} 
+                             keys %control_genos;
         }
         #get hash of sample names to array of sample genotype fields
-        my %sample_genos = getSamplesWithAllele(\@split, $min{$al});
-        my %control_genos = ();
-        if (@controls){
-            %control_genos = map  {$_ => $sample_genos{$_}} 
-                             grep {exists $sample_genos{$_}} @controls;
-            delete @sample_genos{@controls};
-        }
-        next if not keys %sample_genos;#no sample with valid genotype
+        my %samples_with_allele = getSamplesWithAllele(\@split, $min{$al}, 
+                                                       \%sample_genos, \%gqs, 
+                                                       \%pls, \%ads);
+        next ALLELE if not keys %samples_with_allele;#no sample with valid genotype
+        my %controls_with_allele = getSamplesWithAllele(\@split, $min{$al}, 
+                                                        \%control_genos, \%gqs, 
+                                                        \%pls, \%ads);
 
         #get relevant consequence to report
         my $csq_to_report = getConsequenceToReport(\@vep_csq, \%alt_to_vep, $min{$al});
-        next if not $csq_to_report;#i.e. no vep consequence overlaps a gene of interest
+        next ALLELE if not $csq_to_report;#i.e. no vep consequence overlaps a gene of interest
         my $most_damaging_csq = getMostDamagingConsequence($csq_to_report);
         
         #check dbSNP
         my ($dbsnp_freq, $dbsnp_id) = checkDbSnp($min{$al});
-        next if $dbsnp_freq > $opts{f} and $opts{f};
+        next ALLELE if defined $opts{f} and $dbsnp_freq > $opts{f};
         #check EVS
         my ($evs_freq, $evs_pop) = checkEvs($min{$al});
-        next if $evs_freq > $opts{f} and $opts{f};
+        next ALLELE if defined $opts{f} and $evs_freq > $opts{f};
         #check ExAC
         my ($exac_freq, $exac_pop) = checkExac($min{$al});
-        next if $exac_freq > $opts{f} and $opts{f};
+        next ALLELE if defined $opts{f} and $exac_freq > $opts{f};
+        #check gnomAD
+        my ($gnomad_freq, $gnomad_pop) = checkGnomAD($min{$al});
+        next ALLELE if defined $opts{f} and $gnomad_freq > $opts{f};
 
         #add gene expected inheritance and condition
         foreach my $k (qw /inheritance condition reportable/){
@@ -892,26 +942,31 @@ sub assessVariant{
         push @row, $evs_pop ? $evs_pop : "";
         push @row, $exac_freq >= 0 ? $exac_freq : "";
         push @row, $exac_pop ? $exac_pop : "";
-            
+        push @row, $gnomad_freq >= 0 ? $gnomad_freq : "";
+        push @row, $gnomad_pop ? $gnomad_pop : "";
+        
         foreach my $f ( qw / CHROM ORIGINAL_POS ORIGINAL_REF ORIGINAL_ALT / ){
             push @row, $min{$al}->{$f};
         }
         #push @row, VcfReader::getVariantField(\@split, 'ID');
         push @row, $qual;
         push @row, $filter;
-        push @row, $an;
         push @row, $af[$al-1];
         push @row, $ac[$al-1];
+        push @row, $an;
         my $alt = $min{$al}->{ORIGINAL_ALT}; #for readability
         if (@controls){
             my $con_count = 0;
             my $hom_count = 0;
-            map{ my $c = $control_genos{$_}->[1] =~ /^$alt[\/\|]$alt$/ ? 2 : 1;
+            map{ my $c = $controls_with_allele{$_}->[1] =~ /^$alt[\/\|]$alt$/ ? 2 : 1;
                  $con_count += $c;
-                 $hom_count++ if $c == 2;} keys %control_genos;
+                 $hom_count++ if $c == 2;} keys %controls_with_allele;
             my $con_freq = 0.0;
-            if (keys %control_genos){
-                $con_freq = $con_count/scalar(keys %control_genos);
+            if ($control_calls){
+                $con_freq = $con_count/$control_calls;
+            }
+            if (defined $opts{control_freq}){
+                next ALLELE if $con_freq > $opts{control_freq};
             }
             push @row, $con_count, $con_freq, $hom_count;
         }
@@ -936,79 +991,47 @@ sub assessVariant{
                 $sheet = "Functional"; 
             }
         }
-        foreach my $s (keys %sample_genos){
-            push @{$sample_vars{$s}->{$sheet}}, [@{$sample_genos{$s}}, @row];
+        if ($cadd_score ne '.' and $cadd_score < $opts{cadd_cutoff}){
+            $sheet = "Other"; #if cadd score below cutoff classify variant as non-functional
+        }
+        foreach my $s (keys %samples_with_allele){
+            push @{$sample_vars{$s}->{$sheet}}, [@{$samples_with_allele{$s}}, @row];
             if ($opts{u} and $sheet eq "Functional"){#collect sample variants for inheritance analysis
-                if ($cadd_score eq '.' or $cadd_score >= $opts{cadd_cutoff}){
-                    my $h = 1;
-                    $h = 2 if $sample_genos{$s}->[1]  =~  /^$alt[\/\|]$alt$/;
-                    push @{$genes_per_sample{$s}->{$csq_to_report->{symbol}}}, 
-                    {
-                        count   => $h, 
-                        columns => [@{$sample_genos{$s}}, @row],
-                        var     => \@split,
-                        allele  => $al,
-                    };
-                }
+                my $h = 1;
+                $h = 2 if $samples_with_allele{$s}->[1]  =~  /^$alt[\/\|]$alt$/;
+                push @{$genes_per_sample{$s}->{$csq_to_report->{symbol}}}, 
+                {
+                    count   => $h, 
+                    columns => [@{$samples_with_allele{$s}}, @row],
+                    var     => \@split,
+                    allele  => $al,
+                };
             }
         }
     }
 }
 ###########################################################
 sub getSamplesWithAllele{
-    my $l = shift;
-    my $var = shift;
-    my %sample_vars = ();
-    my %samp_gts = VcfReader::getSampleActualGenotypes
-        (
-              line => $l, 
-              all => 1,
-              sample_to_columns => \%samples_to_columns,
-              minGQ => $min_gq,
-        );
-    my %samp_gqs = VcfReader::getSampleGenotypeField
-        (
-              line => $l, 
-              field => "GQ",
-              all => 1,
-              sample_to_columns => \%samples_to_columns,
-        );
-    my %samp_pls = VcfReader::getSampleGenotypeField
-        (
-              line => $l, 
-              field => "PL",
-              all => 1,
-              sample_to_columns => \%samples_to_columns,
-        );
-
-    my %samp_ads = (); 
-    foreach my $s (@samples_to_analyze, @controls){
-        my @ads = VcfReader::getSampleAlleleDepths 
-         (
-              line => $l,
-              sample => $s,
-              sample_to_columns => \%samples_to_columns,
-        );
-        $samp_ads{$s} = \@ads;
-    }    
-    foreach my $s (@samples_to_analyze, @controls){
-        my @alts = split(/[\/\|]/, $samp_gts{$s});
+    my ($l, $var, $gts, $gqs, $pls, $ads) = @_;
+    my %call_details = ();
+    foreach my $s (keys %{$gts}){
+        my @alts = split(/[\/\|]/, $gts->{$s});
         if (grep { $_ eq $var->{ORIGINAL_ALT} } @alts ){ 
-            my @ads = @{$samp_ads{$s}}; 
-            my $depth = sum(@ads);
+            my @al_dp = @{$ads->{$s}}; 
+            my $depth = sum(@al_dp);
             if ($opts{d}){
                 next if $opts{d} > $depth;
             }
-            if ($opts{g}){
-                eval "$opts{g} <= $samp_gqs{$s}" or next;
-            }
+            #if ($opts{g}){ #already filtered on GQ using getSampleActualGenotypes
+            #    eval "$opts{g} <= $gqs->{$s}" or next;
+            #}
             if ($opts{pl}){
-                my @pls = split(",", $samp_pls{$s});
+                my @pls = split(",", $pls->{$s});
                 next if $pls[0] < $opts{pl};
             }
             my $ab = 0;
             if ( $depth > 0){
-                $ab = $ads[$var->{ALT_INDEX}]/$depth;
+                $ab = $al_dp[$var->{ALT_INDEX}]/$depth;
             }
             if (@{$opts{b}}){
                 next if $ab < $opts{b}->[0];
@@ -1016,11 +1039,12 @@ sub getSamplesWithAllele{
                     next if $ab > $opts{b}->[1];
                 }
             }
-            push @{$sample_vars{$s}},  $s, $samp_gts{$s}, join(",", @ads) , $ab, $samp_gqs{$s} ;
+            push @{$call_details{$s}}, $s, $gts->{$s}, join(",", @al_dp) , $ab, $gqs->{$s};
         }
     } 
-    return %sample_vars; 
+    return %call_details; 
 }
+
 ###########################################################
 sub getVepCsq{
     my $l = shift;
@@ -1446,6 +1470,36 @@ sub getEtScore{
     return $max if $max;
     return '';
 }
+
+###########################################################
+sub checkGnomAD{
+    my $var = shift;
+    return -1 if not keys %gnomad_search_args;
+    my @gnomad_hits = VcfReader::searchForPosition
+    (
+        %gnomad_search_args,
+        chrom => $var->{CHROM},
+        pos   => $var->{POS}
+    );
+    my @ids = ();  
+    my $freq = 0;
+    my $pop = '';
+    foreach my $gnomad_line (@gnomad_hits) {
+        #check whether the gnomad line(s) match our variant
+        my @gnomad_split = split( "\t", $gnomad_line );
+        if ( my $match = checkSnpMatches( $var, \@gnomad_split ) ) {
+            my $af = VcfReader::getVariantInfoField(\@gnomad_split, "AF_POPMAX");
+            $freq = (split ",", $af)[$match-1];
+            my $popmax = VcfReader::getVariantInfoField(\@gnomad_split, "POPMAX");
+            $pop = (split ",", $popmax)[$match-1];
+            last;
+        }
+    }
+    $freq =  $freq ne '.' ? $freq : 0;
+    return ($freq, $pop);
+}
+
+
 ###########################################################
 sub checkExac{
     my $var = shift;
@@ -1635,6 +1689,18 @@ sub readExacFile{
         }
     }
     return VcfReader::getSearchArguments($opts{x});
+}
+
+###########################################################
+sub readGnomADFile{
+    return if not ($opts{y});
+    my %info = checkDbFileAndGetInfo($opts{y});
+    foreach my $field (qw/AF_POPMAX POPMAX/){
+        if (not exists $info{$field}){
+            die "ERROR: Could not find $field field in $opts{y} gnomAD file!\n";
+        }
+    }
+    return VcfReader::getSearchArguments($opts{y});
 }
 
 ###########################################################
@@ -2201,6 +2267,8 @@ sub getHeaders{
             EVS_Pop
             ExAC_AF
             ExAC_Pop
+            gnomAD_AF
+            gnomAD_Pop
             Chrom
             Pos
             Ref
@@ -2307,6 +2375,10 @@ dbSNP VCF for annotating and filtering on allele frequency.
 
 ExAC VCF for annotating and filtering on allele frequency.
 
+=item B<-y    --gnomad>
+
+gnomAD VCF for annotating and filtering on allele frequency.
+
 =item B<-e    --evs>
 
 Evs VCF for annotating and filtering on allele frequency. This must be a single
@@ -2354,6 +2426,11 @@ Only analyze the samples listed here.
 
 Treat the following samples as controls and report the count, frequency and 
 homozygous occurences of these samples in the output.
+
+=item B<--control_freq>
+
+If specified, variants with a frequency in control samples greater than this 
+value will be filtered. Valid values are between 0.00 and 1.00.
 
 =item B<-u    --summary>
 
